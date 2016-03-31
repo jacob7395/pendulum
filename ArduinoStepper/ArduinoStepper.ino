@@ -1,6 +1,3 @@
-//due libery header
-#include <DueTimer.h>
-
 /*************************************************************
 This program will be used to control a NEMA24 stepper motor for
 an inverted pendulem proble. It will be reading a single pedomiter
@@ -10,24 +7,42 @@ pi that will retrun the next actoin.
 Disclaimer i'm dyslexic and there is no spell check
 *************************************************************/
 
+#include <DueTimer.h>
+#include <SPI.h>
+#include <string.h>
+
+//this defines how often (mS) we request SPI transfer from Pi
+#define TX_INTERVAL 50
+//timeout in mS for "rx data register full" flag to be set
+#define RDRF_TIMEOUT 30
+//timeout in mS for a full packet (SPI data frame) to be received
+#define PACKET_TIMEOUT 100
+//the number of bytes being transmited and resived in one SPI message incluing start and chack
+#define NUMBER_OF_BYTES 3
+
 //---------------------------------------------------------------//
 //function decleratoin
+//motor control
 void Set_Directoin(bool Directoin);
 void Step(void);
 void Set_Motor_Speed(float ms);
-void Left_Limit_Hit  (void);
-void Right_Limit_Hit (void);
+//Hall sensors
 void Hall_One_Hit    (void);
 void Hall_Two_Hit    (void);
 void Hall_Three_Hit  (void);
 void Hall_Four_Hit   (void);
 void Hall_Five_Hit   (void);
+//SPI
+unsigned char GetByteFromSPI(void);
+void SPI_Manager(void);
 
 //---------------------------------------------------------------//
 //global and const varible decloratoin
 //not good practive but okay in arduino
-const int Pulse    = 23;//used in setup functoin and when editing pins
-const int Dir      = 25;//don't use digital writes insted directly acces the system
+
+//Pins associsted withe the motor drives
+const int Pulse    = 23;
+const int Dir      = 25;
 const int EN       = 27;
 const int RESET    = 29;
 const int SLEEP    = 31;
@@ -74,9 +89,88 @@ bool Config_Mode = false; //tell the system that cofig mode is running
 float s = 0.1;
 int PPS = 0;
 //---------------------------------------------------------------//
+// SPI input and output arrays
+unsigned char SPI_in [NUMBER_OF_BYTES]; // holds incoming data from Pi
+unsigned char SPI_out[NUMBER_OF_BYTES]; // holds outgoing SPI data 
+                                                                     
+unsigned int BytesRx;    // count of bytes rx on SPI     
+
+long CurrentPosition;
+unsigned long PreviousTime;
+unsigned long Timeout;
+unsigned long PacketStartTime;
+unsigned long PacketsTransferred;
+unsigned long ChecksumErrors;
+
+int SetSpeed;   // speed from Pi - decoded from SPI
+
+int SensorDataAvailablePin = 49; // tells Pi that sensor data is ready for SPI transfer
+int AngleSensorPin = 0;   // ANALOG A0 - wiper from potentiometer - analog reference is default 5V internal
+
+boolean DataTransferActive; // the sensor data is ready for SPI transfer
+unsigned int Angle;
+
+unsigned int k;
+unsigned char chksum;
+uint32_t OutByte;
+
+// debug
+unsigned long timenow;
+unsigned long timeout;
+unsigned long LastStepTime;
+unsigned long LoopDuration;
+
 
 //***********************************************************************//
 void setup() {
+
+  Serial.begin(115200);
+  //--------------------------------------------------------------------//
+  //SPI setup
+
+  //what is this?
+  BytesRx = 0;
+  //set SPI_IN/OUT to 0
+  DataTransferActive = false;
+  for (int j=0; j<12; ++j) 
+  {
+    SPI_in[j]=0;
+    SPI_out[j]=0;
+  }
+  //comment?
+  PacketsTransferred  =0;
+  ChecksumErrors      =0;
+  
+  // initialise port pin that tells the Pi SPI data available
+  // PI is looking for a falling edge so after initalzing the pin set the pin high
+  pinMode     (SensorDataAvailablePin, OUTPUT ); 
+  digitalWrite(SensorDataAvailablePin, HIGH   );
+
+  // setup SPI as slave
+  SPI.begin(10); // is this needed ?
+
+  //Sets up the SPI regesters and enables the arduino as a salve
+  //it also preints the content of key registers befor and after setting them
+  //this is not needed to make it work but gives some debug data
+  Serial.print("SPI0_MR "  ); Serial.println(REG_SPI0_MR  , HEX); 
+  Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
+  Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
+
+  REG_SPI0_WPMR = 0x53504900    ; // Write Protection disable
+  REG_SPI0_CR   = SPI_CR_SWRST  ; // reset  SPI (0x0080)
+  REG_SPI0_CR   = SPI_CR_SPIEN  ; // enable SPI (0x0001)
+  REG_SPI0_MR   = SPI_MR_MODFDIS; // slave and no mode fault (0x0010)
+  REG_SPI0_CSR  = SPI_MODE0     ; // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
+  REG_SPI0_IDR  = 0X0000070F    ; // disable all SPI interrupts
+
+  Serial.print("SPI0_MR ")  ; Serial.println(REG_SPI0_MR  , HEX); 
+  Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
+  Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
+  //Timer 3 starts and manages the SPI data transfer
+  Timer3.attachInterrupt(SPI_Manager).setFrequency(1).start();
+
+  //--------------------------------------------------------------------//
+  //Motor and sensor setup
 
   //establish motor direction toggle pins
   pinMode(Pulse  , OUTPUT); //
@@ -107,16 +201,15 @@ void setup() {
   //attachInterrupt(digitalPinToInterrupt(Hall_Three)  , Hall_Three_Hit  , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Four)   , Hall_Four_Hit   , FALLING );
   //attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
-
-
-  Serial.begin(115200);
+  
+  //--------------------------------------------------------------------//
 }
 //***********************************************************************//
 void loop() {
   delay(1000);
   Serial.println(" ");
   Serial.println("Begin");
-  Mode = 1;
+  Mode = 0;
   
   for( ; ; )
   {
@@ -403,7 +496,94 @@ void Hall_Five_Hit  (void)
       Serial.println("Hall Five Hit");
     }
 }
+//***********************************************************************//
+//Sectoin for SPI function
 
+//this function resives the latest message from the SPI register assosiated with SPI0
+unsigned char GetByteFromSPI(void) 
+{
+    //reading REG_SPI0_SR clears the regester conferming a bit is resived
+    //the register is a read-only so the bit can't be manuly cleared
+    uint32_t s = REG_SPI0_SR;
+    //takes a time stamp using millis then waits until the SPI0 flag is set
+    unsigned long Byte_Start_Time = millis();
+    while ((REG_SPI0_SR & SPI_SR_RDRF) == 0) 
+    {
+      //if the loop takes longer then the RDRF_TIMEOUT as defined the top
+      //print a failer message and return 0xff telling the system there was an error
+      //it may be possible that 0xff is a valid message if so concider making it invalid or finding a new fault bit
+      if((millis()-Byte_Start_Time) > RDRF_TIMEOUT)
+      {
+        Serial.println("Timeout waiting for RDRF");
+        return(0xff);
+      }
+    };
+    //if the while loop is broken a message has been resived so return the message and mask the invalit bits
+    //REG_SPI0_RDR is a 32 bit register but the message is only 16 bit (4 byte) that why the 0xFF mask is needed
+    return (REG_SPI0_RDR & 0xFF);
+}
+
+//
+void SPI_Manager(void) 
+{
+  Serial.println("SPI Begin");
+  
+  SPI_out[0] = 0x55; // valid start of message
+  SPI_out[1] = 0x00; // Data to be transferd
+
+  //make the checksum
+  SPI_out[NUMBER_OF_BYTES - 1] = 0;
+  for (k = 0; k < NUMBER_OF_BYTES - 1; k++) {
+    SPI_out[NUMBER_OF_BYTES - 1] += SPI_out[k];
+  } 
+  //reading the SPI register clears the flag
+  //the register is a read only so this is the only way to clear it
+  int DummyRead = REG_SPI0_RDR; 
+
+  //load TDR with the first byte to be ready for tx when Pi trasmits
+  BytesRx = 0;
+  REG_SPI0_TDR = SPI_out[BytesRx] & 0x0ff;; // load outgoing register 
+  
+  //request SPI transfer from Pi SPI master
+  //this way of changing the pins is fater than digitalWrite()
+  //there is no delay inbetween the pin high and pin low this may cause problems
+  //set pin high
+  g_APinDescription[SensorDataAvailablePin].pPort -> PIO_SODR = g_APinDescription[SensorDataAvailablePin].ulPin;
+  //set pin low
+  g_APinDescription[SensorDataAvailablePin].pPort -> PIO_CODR = g_APinDescription[SensorDataAvailablePin].ulPin;
+  
+  //each 8-bit SPI transfer should take 16uS with 500000Hz clock
+  //the 1st byte from Pi will arrive immediately, then at 50uS intervals
+  SPI_in[BytesRx]=GetByteFromSPI(); // get 1st byte
+  //if the fist byte is the start byte as expected procide with the data transfer
+  if (SPI_in[0]==0x55) 
+  {
+    do
+    {
+      BytesRx++;
+
+      REG_SPI0_TDR = SPI_out[BytesRx] & 0x0ff; // load outgoing register 
+
+      GetByteFromSPI();
+
+    } while(BytesRx < (NUMBER_OF_BYTES-1))  ;  
+  }
+  //if start but was not resived in the first byte data is wrong
+  //print message to the serial informing user bad transfer then reset the SPI register as in setup
+  //hopfully proventing futer bad messages
+  else 
+  {
+    //message to userial
+    Serial.print("No start byte resived"); Serial.println(PreviousTime);
+    //reset the SPI registers to recover from fault
+    REG_SPI0_WPMR = 0x53504900;   // Write Protection disable
+    REG_SPI0_CR = SPI_CR_SWRST;   // reset SPI (0x0080)
+    REG_SPI0_CR = SPI_CR_SPIEN;   // enable SPI (0x0001)
+    REG_SPI0_MR = SPI_MR_MODFDIS; // slave and no mode fault (0x0010)
+    REG_SPI0_CSR = SPI_MODE0;     // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
+    REG_SPI0_IDR = 0X0000070F;    // disable all SPI interrupts
+  }
+}
 /*************************************************************
 Jacob Threadgould 2016
 *************************************************************/
