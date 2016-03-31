@@ -41,8 +41,8 @@ int Step_Count = 0;
 
 bool Timer1_State = 0;
 
-float Desired_Motor_Speed = 0;//set by the main the change the speed of the motor using the timer attached to Set_Motor_Speed
-float Current_Motor_Speed = 0;//used by set_motor_speed to control the acceleratoin
+volatile float Desired_Motor_Speed = 0;//set by the main the change the speed of the motor using the timer attached to Set_Motor_Speed
+volatile float Current_Motor_Speed = 0;//used by set_motor_speed to control the acceleratoin
 
 int Timer2_State = 0;//tracks the status of Timer2 used in a if statment to toggle the timer
 //Decleratoin for key system peramiters
@@ -96,11 +96,11 @@ void setup() {
   Timer2.attachInterrupt(Set_Motor_Speed).setFrequency(200).start();
   //block to attach interupts to required digital pins with the correct CALLBACK function
   //all pins are set from INPUT
-  pinMode(Hall_One    , INPUT);
-  pinMode(Hall_Two    , INPUT);
-  pinMode(Hall_Three  , INPUT);
-  pinMode(Hall_Four   , INPUT);
-  pinMode(Hall_Five   , INPUT);
+  pinMode(Hall_One    , INPUT_PULLUP);
+  pinMode(Hall_Two    , INPUT_PULLUP);
+  pinMode(Hall_Three  , INPUT_PULLUP);
+  pinMode(Hall_Four   , INPUT_PULLUP);
+  pinMode(Hall_Five   , INPUT_PULLUP);
 
   //attachInterrupt(digitalPinToInterrupt(Hall_One)    , Hall_One_Hit    , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Two)    , Hall_Two_Hit    , FALLING );
@@ -116,16 +116,18 @@ void loop() {
   delay(1000);
  
   Serial.println("Begin");
-  Mode = 1;
+  Mode = 0;
   
   for( ; ; )
   {
     switch(Mode) {
     
     case 0:
-    
+      Config_Mode = false;
+      //delay(1);
+      Desired_Motor_Speed = -0.3;
     break;
-    //this case wrongs a config opperation
+    //this case uses a config opperation
     //it current travels slowly left towards hall 1
     //when hall 1 is hit the step count is reset to 0
     //the cart then slowly travels to the other end stoping when it hits hall 5
@@ -133,15 +135,17 @@ void loop() {
     //it also prints the length in meters
     case 1:
       Config_Mode = true;
-      Desired_Motor_Speed = -0.4;
+      delay(1);
+      Desired_Motor_Speed = -0.3;
 
       delay(50); //delay allows time for the movment to begin
       while(Current_Frequency != 0) //waits until the cart stops(when it hits the hall)
       {
+        //Serial.println(Current_Frequency);
         delay(1); //short delay while waitting
       }
       Step_Count = 0;//reset the step counts
-      Desired_Motor_Speed = 0.4;//begin traveling right towards hall 5
+      Desired_Motor_Speed = 0.3;//begin traveling right towards hall 5
 
       delay(50); //delay allows time for the movment to begin
       while(Current_Frequency != 0) //waits until the cart stops(when it hits the hall)
@@ -152,7 +156,8 @@ void loop() {
       Serial.print("Track length in pulses is ");
       Serial.println(Step_Count);
       Serial.print("Track length in meters is ");
-      Serial.println(Step_Count * Distance_Per_Step);
+      float Track_Length = 0.00045;
+      Serial.println(Track_Length);
       //move to standerd opperation mode
       Mode = 0;
     break;
@@ -183,21 +188,25 @@ void Set_Motor_Speed(void)
   //The required PPS is *2 to get the frequency requred for the interupt so it can pule low and high at the PPS
   //the following if statments manage the changing in directing and speed
   static int Desired_Frequency = 0;  //used to store the result of PPS calculatoins
+  static int Delay_Count       = 0;
+  Delay_Count++;
   //if the Desired speed(DS) is less then 0 and Current_Frequency(CF) is grater then 0 and the directing == 0 ramp PPS to 0
   //meaning if the cart is in motion but in the wrong direction ramp the spped down to 0
   if(Desired_Motor_Speed < 0 && Current_Frequency > 0 && Direction == 1)
   {
     Desired_Frequency = 0; 
+    Delay_Count = 0;
   }
   //if the DS is less than 0 and the CF is = to 0 and the direction is not 0 change the direction
   //if the cart has stopped but the direction is incorrect change directoin
-  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1)
+  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 0)
   {
     Set_Directoin(0);
+    Delay_Count = 0;
   }
   //if DS is less than 0 and the CF is less than or equle to 0 and the direction is correct calculate the correct PPS
   //if the is still or moving in the correct direction calculate the wanted fequency
-  else if(Desired_Motor_Speed < 0 && Current_Frequency >= 0 && Direction == 0)
+  else if(Desired_Motor_Speed <= 0 && Current_Frequency >= 0 && Direction == 0 && Delay_Count >= 0)
   {
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * -1) * Distance_Per_Step) * 2;
   }
@@ -206,16 +215,18 @@ void Set_Motor_Speed(void)
   else if(Desired_Motor_Speed > 0 && Current_Frequency > 0 && Direction == 0)
   {
     Desired_Frequency = 0; 
+    Delay_Count = 0;
   }
   //if DS is grater then 0 and the CF equels 0 and the direction is worn change direction
   //if the cart is not moving but the direction is wrong changedirection
-  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0)
+  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 0)
   {
     Set_Directoin(1);
+    Delay_Count = 0;
   }
   //if the DS is grater then 0 and then CF is grater than or equel to 0 and the directoin is correct calculated wanted frequency
   //if the cart is stil or moving in the correct direction calculate the wanted fequency
-  else if(Desired_Motor_Speed > 0 && Current_Frequency >= 0 && Direction == 1)
+  else if(Desired_Motor_Speed >= 0 && Current_Frequency >= 0 && Direction == 1 && Delay_Count >= 0)
   {
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * 1) * Distance_Per_Step) * 2;
   }
