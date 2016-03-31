@@ -114,18 +114,17 @@ void setup() {
 //***********************************************************************//
 void loop() {
   delay(1000);
- 
+  Serial.println(" ");
   Serial.println("Begin");
-  Mode = 0;
+  Mode = 1;
   
   for( ; ; )
   {
     switch(Mode) {
     
-    case 0:
+    case 0: //case to stop the cart
       Config_Mode = false;
-      //delay(1);
-      Desired_Motor_Speed = -0.3;
+      Desired_Motor_Speed = 0;
     break;
     //this case uses a config opperation
     //it current travels slowly left towards hall 1
@@ -135,10 +134,8 @@ void loop() {
     //it also prints the length in meters
     case 1:
       Config_Mode = true;
-      delay(1);
       Desired_Motor_Speed = -0.3;
-
-      delay(50); //delay allows time for the movment to begin
+      delay(100); //delay allows time for the movment to begin
       while(Current_Frequency != 0) //waits until the cart stops(when it hits the hall)
       {
         //Serial.println(Current_Frequency);
@@ -146,8 +143,8 @@ void loop() {
       }
       Step_Count = 0;//reset the step counts
       Desired_Motor_Speed = 0.3;//begin traveling right towards hall 5
-
-      delay(50); //delay allows time for the movment to begin
+      
+      delay(100); //delay allows time for the movment to begin
       while(Current_Frequency != 0) //waits until the cart stops(when it hits the hall)
       {
         delay(1); //short delay while waitting
@@ -156,7 +153,7 @@ void loop() {
       Serial.print("Track length in pulses is ");
       Serial.println(Step_Count);
       Serial.print("Track length in meters is ");
-      float Track_Length = 0.00045;
+      float Track_Length = 0.00045*Step_Count;
       Serial.println(Track_Length);
       //move to standerd opperation mode
       Mode = 0;
@@ -199,14 +196,14 @@ void Set_Motor_Speed(void)
   }
   //if the DS is less than 0 and the CF is = to 0 and the direction is not 0 change the direction
   //if the cart has stopped but the direction is incorrect change directoin
-  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 0)
+  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 5)
   {
     Set_Directoin(0);
     Delay_Count = 0;
   }
   //if DS is less than 0 and the CF is less than or equle to 0 and the direction is correct calculate the correct PPS
   //if the is still or moving in the correct direction calculate the wanted fequency
-  else if(Desired_Motor_Speed <= 0 && Current_Frequency >= 0 && Direction == 0 && Delay_Count >= 0)
+  else if(Desired_Motor_Speed <= 0 && Current_Frequency >= 0 && Direction == 0 && Delay_Count >= 15)
   {
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * -1) * Distance_Per_Step) * 2;
   }
@@ -219,14 +216,14 @@ void Set_Motor_Speed(void)
   }
   //if DS is grater then 0 and the CF equels 0 and the direction is worn change direction
   //if the cart is not moving but the direction is wrong changedirection
-  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 0)
+  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 5)
   {
     Set_Directoin(1);
     Delay_Count = 0;
   }
   //if the DS is grater then 0 and then CF is grater than or equel to 0 and the directoin is correct calculated wanted frequency
   //if the cart is stil or moving in the correct direction calculate the wanted fequency
-  else if(Desired_Motor_Speed >= 0 && Current_Frequency >= 0 && Direction == 1 && Delay_Count >= 0)
+  else if(Desired_Motor_Speed >= 0 && Current_Frequency >= 0 && Direction == 1 && Delay_Count >= 15)
   {
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * 1) * Distance_Per_Step) * 2;
   }
@@ -285,33 +282,26 @@ void Set_Motor_Speed(void)
 //***********************************************************************//
 void Step(void) {
   //---------------------------------------------------------------//
-  //if the motor direction is forward incroment step count
-  //esle decroment step count
-  //as this function is called 2* fater the the PPS
-  //step count needs to incroment/decroment every 2 calls
-  static bool Count = 0;
-  Count++;
-
-  if (Direction == 1 && Count >= 1)
-  {
-    Step_Count++;
-    Count = 0;
-  }
-  else if (Count >= 1)
-  {
-    Step_Count--;
-    Count = 0;
-  }
-  //---------------------------------------------------------------//
   //toggels the Pulse pin and only the pulse pin
   //pulse pin used is digital 28
   //digital wright is slow so the following lines clear and set the due register
   //with the signal tracking it's state
+
+  //if the motor direction is moving forward incroment step count
+  //esle decroment step count
   static bool state = 0;
   if (state == 0)
   {
     g_APinDescription[Pulse].pPort -> PIO_SODR = g_APinDescription[Pulse].ulPin;
     state = 1;
+    if (Direction == 1)
+    {
+      Step_Count++;
+    }
+    else
+    {
+      Step_Count--;
+    }
   }
   else if (state == 1)
   {
