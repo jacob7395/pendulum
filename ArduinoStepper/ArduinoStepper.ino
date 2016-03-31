@@ -18,7 +18,7 @@ Disclaimer i'm dyslexic and there is no spell check
 //timeout in mS for a full packet (SPI data frame) to be received
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
-#define NUMBER_OF_BYTES 3
+#define NUMBER_OF_BYTES 12
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -120,6 +120,7 @@ unsigned long timeout;
 unsigned long LastStepTime;
 unsigned long LoopDuration;
 
+bool Ready_For_Data = false;
 
 //***********************************************************************//
 void setup() {
@@ -131,8 +132,7 @@ void setup() {
   //what is this?
   BytesRx = 0;
   //set SPI_IN/OUT to 0
-  DataTransferActive = false;
-  for (int j=0; j<12; ++j) 
+  for (int j=0; j<NUMBER_OF_BYTES-1; ++j) 
   {
     SPI_in[j]=0;
     SPI_out[j]=0;
@@ -151,7 +151,7 @@ void setup() {
 
   //Sets up the SPI regesters and enables the arduino as a salve
   //it also preints the content of key registers befor and after setting them
-  //this is not needed to make it work but gives some debug data
+  //this is not needed to make it work but gives some debug info
   Serial.print("SPI0_MR "  ); Serial.println(REG_SPI0_MR  , HEX); 
   Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
   Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
@@ -167,7 +167,7 @@ void setup() {
   Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
   Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
   //Timer 3 starts and manages the SPI data transfer
-  Timer3.attachInterrupt(SPI_Manager).setFrequency(1).start();
+  Timer3.attachInterrupt(SPI_Manager).setFrequency(10).start();
 
   //--------------------------------------------------------------------//
   //Motor and sensor setup
@@ -209,15 +209,20 @@ void loop() {
   delay(1000);
   Serial.println(" ");
   Serial.println("Begin");
-  Mode = 0;
+  Mode = 1;
   
   for( ; ; )
   {
     switch(Mode) {
     
     case 0: //case to stop the cart
+      if(Ready_For_Data == false)
+      {
+        Ready_For_Data = true;
+      }
       Config_Mode = false;
       Desired_Motor_Speed = 0;
+      delay(100);
     break;
     //this case uses a config opperation
     //it current travels slowly left towards hall 1
@@ -246,23 +251,19 @@ void loop() {
       Serial.print("Track length in pulses is ");
       Serial.println(Step_Count);
       Serial.print("Track length in meters is ");
-      float Track_Length = 0.00045*Step_Count;
-      Serial.println(Track_Length);
+      Serial.println(0.00045*Step_Count);
       //move to standerd opperation mode
       Mode = 0;
+    break;
+    //temp state to initiate SPI transfer
+    case 2:
+      SPI_Manager();
+      Ready_For_Data = false;
+      Mode = 0;  
     break;
     
     }
   }
-  
-  //  PPS = (Desired_Motor_Speed*Step_Res) / 0.00045;
-
-  //  Serial.println(s);
-  //  Serial.println(PPS);
-  //  Serial.println(Step_Count);
-  //  Serial.println(Desired_Motor_Speed);
-  //  Serial.println(Current_Motor_Speed);
-  //  Serial.println(Distance_Per_Step);
 }
 //***********************************************************************//
 //function that sets the frequency of timer1
@@ -525,11 +526,18 @@ unsigned char GetByteFromSPI(void)
 
 //
 void SPI_Manager(void) 
-{
-  Serial.println("SPI Begin");
-  
+{ 
   SPI_out[0] = 0x55; // valid start of message
-  SPI_out[1] = 0x00; // Data to be transferd
+  SPI_out[1] = 0x01; // Data to be transferd
+  SPI_out[2] = 0x02; // Data to be transferd
+  SPI_out[3] = 0x03; // Data to be transferd
+  SPI_out[4] = 0x04; // Data to be transferd
+  SPI_out[5] = 0x05; // Data to be transferd
+  SPI_out[6] = 0x06; // Data to be transferd
+  SPI_out[7] = 0x07; // Data to be transferd
+  SPI_out[8] = 0x08; // Data to be transferd
+  SPI_out[9] = 0x09; // Data to be transferd
+  SPI_out[10]= 0x0A; // Data to be transferd
 
   //make the checksum
   SPI_out[NUMBER_OF_BYTES - 1] = 0;
@@ -563,9 +571,9 @@ void SPI_Manager(void)
       BytesRx++;
 
       REG_SPI0_TDR = SPI_out[BytesRx] & 0x0ff; // load outgoing register 
-
-      GetByteFromSPI();
-
+      
+      char data = GetByteFromSPI();
+      
     } while(BytesRx < (NUMBER_OF_BYTES-1))  ;  
   }
   //if start but was not resived in the first byte data is wrong
@@ -582,6 +590,15 @@ void SPI_Manager(void)
     REG_SPI0_MR = SPI_MR_MODFDIS; // slave and no mode fault (0x0010)
     REG_SPI0_CSR = SPI_MODE0;     // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
     REG_SPI0_IDR = 0X0000070F;    // disable all SPI interrupts
+  }
+}
+
+void SPI_Timer(void)
+{
+  if(Ready_For_Data == true)
+  {
+    Ready_For_Data = false;
+    Mode = 2;
   }
 }
 /*************************************************************
