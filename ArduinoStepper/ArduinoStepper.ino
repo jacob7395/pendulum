@@ -6,7 +6,7 @@ pi that will retrun the next actoin.
 
 Disclaimer i'm dyslexic and there is no spell check
 *************************************************************/
-
+//https://github.com/ivanseidel/DueTimer
 #include <DueTimer.h>
 #include <SPI.h>
 #include <string.h>
@@ -18,7 +18,7 @@ Disclaimer i'm dyslexic and there is no spell check
 //timeout in mS for a full packet (SPI data frame) to be received
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
-#define NUMBER_OF_BYTES 12
+#define NUMBER_OF_BYTES 5
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -95,30 +95,7 @@ unsigned char SPI_out[NUMBER_OF_BYTES]; // holds outgoing SPI data
                                                                      
 unsigned int BytesRx;    // count of bytes rx on SPI     
 
-long CurrentPosition;
-unsigned long PreviousTime;
-unsigned long Timeout;
-unsigned long PacketStartTime;
-unsigned long PacketsTransferred;
-unsigned long ChecksumErrors;
-
-int SetSpeed;   // speed from Pi - decoded from SPI
-
 int SensorDataAvailablePin = 49; // tells Pi that sensor data is ready for SPI transfer
-int AngleSensorPin = 0;   // ANALOG A0 - wiper from potentiometer - analog reference is default 5V internal
-
-boolean DataTransferActive; // the sensor data is ready for SPI transfer
-unsigned int Angle;
-
-unsigned int k;
-unsigned char chksum;
-uint32_t OutByte;
-
-// debug
-unsigned long timenow;
-unsigned long timeout;
-unsigned long LastStepTime;
-unsigned long LoopDuration;
 
 bool Ready_For_Data = false;
 
@@ -137,9 +114,6 @@ void setup() {
     SPI_in[j]=0;
     SPI_out[j]=0;
   }
-  //comment?
-  PacketsTransferred  =0;
-  ChecksumErrors      =0;
   
   // initialise port pin that tells the Pi SPI data available
   // PI is looking for a falling edge so after initalzing the pin set the pin high
@@ -167,7 +141,8 @@ void setup() {
   Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
   Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
   //Timer 3 starts and manages the SPI data transfer
-  Timer3.attachInterrupt(SPI_Manager).setFrequency(10).start();
+  delay(100);
+  Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
 
   //--------------------------------------------------------------------//
   //Motor and sensor setup
@@ -539,10 +514,11 @@ void SPI_Manager(void)
   SPI_out[9] = 0x09; // Data to be transferd
   SPI_out[10]= 0x0A; // Data to be transferd
 
-  //make the checksum
+  //make the checksum nad clear old SPI_in data
   SPI_out[NUMBER_OF_BYTES - 1] = 0;
-  for (k = 0; k < NUMBER_OF_BYTES - 1; k++) {
-    SPI_out[NUMBER_OF_BYTES - 1] += SPI_out[k];
+  for (int i = 0; i < NUMBER_OF_BYTES - 1; i++) {
+    SPI_in[i] = 0;
+    SPI_out[NUMBER_OF_BYTES - 1] += SPI_out[i];
   } 
   //reading the SPI register clears the flag
   //the register is a read only so this is the only way to clear it
@@ -572,7 +548,7 @@ void SPI_Manager(void)
 
       REG_SPI0_TDR = SPI_out[BytesRx] & 0x0ff; // load outgoing register 
       
-      char data = GetByteFromSPI();
+      SPI_in[BytesRx] = GetByteFromSPI();
       
     } while(BytesRx < (NUMBER_OF_BYTES-1))  ;  
   }
@@ -582,12 +558,12 @@ void SPI_Manager(void)
   else 
   {
     //message to userial
-    Serial.print("No start byte resived"); Serial.println(PreviousTime);
+    Serial.print("No start byte resived");
     //reset the SPI registers to recover from fault
     REG_SPI0_WPMR = 0x53504900;   // Write Protection disable
-    REG_SPI0_CR = SPI_CR_SWRST;   // reset SPI (0x0080)
-    REG_SPI0_CR = SPI_CR_SPIEN;   // enable SPI (0x0001)
-    REG_SPI0_MR = SPI_MR_MODFDIS; // slave and no mode fault (0x0010)
+    REG_SPI0_CR  = SPI_CR_SWRST;  // reset SPI (0x0080)
+    REG_SPI0_CR  = SPI_CR_SPIEN;  // enable SPI (0x0001)
+    REG_SPI0_MR  = SPI_MR_MODFDIS;// slave and no mode fault (0x0010)
     REG_SPI0_CSR = SPI_MODE0;     // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
     REG_SPI0_IDR = 0X0000070F;    // disable all SPI interrupts
   }
