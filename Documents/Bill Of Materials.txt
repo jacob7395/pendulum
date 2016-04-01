@@ -1,0 +1,22 @@
+
+
+Item                            Type            Notes
+-----------------------------------------------------------------------------------------------------------------------------------------------
+Limit Sensor                    PCB             No Issues noted
+Limit Sensor Mount              Plastic         Enlarge hole from 4mm to 5mm
+Limit Sensor Magnet Mount       Platsic         Added 45' Chamfer to bottom edge next to Magnet (stops it hitting frame mounting brackets)
+
+Motor Support Barcket           Plastic         No Issues noted
+
+Pendulum Pole Mount             Plastic         No Issues noted
+Pendulum/Carriage Mount         Plastic         Version 3. Need to add a 3mm hole for the Limit Sensor Magnet Mount
+Carriage Spacer                 Plastic         Trim 2mm to stop it from fouling Magnet Mount
+
+Proto Board Mount 50 x 70       Plastic         No Issues noted
+Proto Plug Board Frame          Plastic         No Issues noted
+Arduino Due Mounting Frame      Plastic         No Issues noted
+
+Raspberry Pi SPI Board          PCB             No Issues noted
+Raspberry Pi Case               Plastic         No Issues noted
+
+Pendulum Weighted End           Plastic         Not Started Yet
