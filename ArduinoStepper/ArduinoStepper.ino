@@ -77,7 +77,13 @@ int Hall_Two    = 24;
 int Hall_Three  = 26;
 int Hall_Four   = 28;
 int Hall_Five   = 30;
-//
+//LED pins
+int LED_White   = 35;
+int LED_Blue    = 37;
+int LED_Green   = 39;
+int LED_Yellow  = 41;
+int LED_Red     = 43;
+//using the the main for the switch statment that drives the arduino
 int Mode = 0;
 //when new speed recived plase hear and set mode to 1 for speed change
 int New_Speed = 0;
@@ -176,6 +182,13 @@ void setup() {
   //attachInterrupt(digitalPinToInterrupt(Hall_Three)  , Hall_Three_Hit  , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Four)   , Hall_Four_Hit   , FALLING );
   //attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
+  //initilazatoin of LED pius
+  pinMode(LED_White   , OUTPUT);
+  pinMode(LED_Blue    , OUTPUT);
+  pinMode(LED_Green   , OUTPUT);
+  pinMode(LED_Yellow  , OUTPUT);
+  pinMode(LED_Red     , OUTPUT);
+
   
   //--------------------------------------------------------------------//
 }
