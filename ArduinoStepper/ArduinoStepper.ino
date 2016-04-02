@@ -183,11 +183,11 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(Hall_Four)   , Hall_Four_Hit   , FALLING );
   //attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
   //initilazatoin of LED pius
-  pinMode(LED_White   , OUTPUT);
-  pinMode(LED_Blue    , OUTPUT);
-  pinMode(LED_Green   , OUTPUT);
-  pinMode(LED_Yellow  , OUTPUT);
-  pinMode(LED_Red     , OUTPUT);
+  pinMode(LED_White   , HIGH);
+  pinMode(LED_Blue    , HIGH);
+  pinMode(LED_Green   , HIGH);
+  pinMode(LED_Yellow  , HIGH);
+  pinMode(LED_Red     , HIGH);
 
   
   //--------------------------------------------------------------------//
