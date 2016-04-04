@@ -146,7 +146,12 @@ void setup() {
   Serial.print("SPI0_MR ")  ; Serial.println(REG_SPI0_MR  , HEX); 
   Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
   Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
-  //Timer 3 starts and manages the SPI data transfer
+  //set up inital SPI_out data
+  SPI_out[0] = 0x55;
+  SPI_out[1] = 0x01;
+  SPI_out[2] = 0x02;
+  SPI_out[3] = 0x03;
+  //Timer 3 starts the SPI data transfer
   delay(100);
   Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
 
@@ -245,6 +250,7 @@ void loop() {
     break;
     //temp state to initiate SPI transfer
     case 2:
+
       SPI_Manager();
       Ready_For_Data = false;
       Mode = 0;  
@@ -433,6 +439,8 @@ void Hall_One_Hit   (void)
     else
     {
       Serial.println("Hall One Hit");
+      Serial.println(Step_Count);
+      Desired_Motor_Speed = 0;
     }
 }
 
@@ -445,7 +453,7 @@ void Hall_Two_Hit   (void)
     else
     {
       Serial.println("Hall Two Hit");
-      Desired_Motor_Speed = 0;
+      Serial.println(Step_Count);
     }
 }
 
@@ -458,6 +466,7 @@ void Hall_Three_Hit (void)
     else
     {
       Serial.println("Hall Three Hit");
+      Serial.println(Step_Count);
     }
 }
 
@@ -470,7 +479,7 @@ void Hall_Four_Hit  (void)
     else
     {
       Serial.println("Hall Four Hit");
-      Desired_Motor_Speed = 0;
+      Serial.println(Step_Count);
     }
 }
 
@@ -483,6 +492,8 @@ void Hall_Five_Hit  (void)
     else
     {
       Serial.println("Hall Five Hit");
+      Serial.println(Step_Count);
+      Desired_Motor_Speed = 0;
     }
 }
 //***********************************************************************//
@@ -515,18 +526,6 @@ unsigned char GetByteFromSPI(void)
 //
 void SPI_Manager(void) 
 { 
-  SPI_out[0] = 0x55; // valid start of message
-  SPI_out[1] = 0x01; // Data to be transferd
-  SPI_out[2] = 0x02; // Data to be transferd
-  SPI_out[3] = 0x03; // Data to be transferd
-  SPI_out[4] = 0x04; // Data to be transferd
-  SPI_out[5] = 0x05; // Data to be transferd
-  SPI_out[6] = 0x06; // Data to be transferd
-  SPI_out[7] = 0x07; // Data to be transferd
-  SPI_out[8] = 0x08; // Data to be transferd
-  SPI_out[9] = 0x09; // Data to be transferd
-  SPI_out[10]= 0x0A; // Data to be transferd
-
   //make the checksum nad clear old SPI_in data
   SPI_out[NUMBER_OF_BYTES - 1] = 0;
   for (int i = 0; i < NUMBER_OF_BYTES - 1; i++) {
