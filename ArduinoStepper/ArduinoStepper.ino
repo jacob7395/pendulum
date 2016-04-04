@@ -50,6 +50,13 @@ const int FAULT    = 33;
 
 const int Step_Res = 1;
 const int Acceleration_Period_ms = 15;
+//Analog pin for the pot using in adc
+const int Pot            = 11;
+const int Pot_Resolution = 10;
+float     Degree_Per_Bit = 0;
+float     Pot_Position   = 0;
+float     Pot_Velocity   = 0;
+float     Pot_Offset     = 71.37;
 
 bool Direction = 1;
 int Step_Count = 0;
@@ -105,6 +112,8 @@ int SensorDataAvailablePin = 49; // tells Pi that sensor data is ready for SPI t
 
 bool Ready_For_Data = false;
 
+unsigned long timestamp1 = 0;
+unsigned long timestamp2 = 0;
 //***********************************************************************//
 void setup() {
 
@@ -153,11 +162,14 @@ void setup() {
   SPI_out[3] = 0x03;
   //Timer 3 starts the SPI data transfer
   delay(100);
-  Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
+  //Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
 
   //--------------------------------------------------------------------//
   //Motor and sensor setup
-
+  //ADC pin for the pot and seting analog reselution
+  analogReadResolution(Pot_Resolution);
+  Degree_Per_Bit = 360/pow(2,Pot_Resolution);
+  Timer4.attachInterrupt(Mary_Jane).setFrequency(1000).start();
   //establish motor direction toggle pins
   pinMode(Pulse  , OUTPUT); //
   pinMode(Dir    , OUTPUT); //
@@ -182,18 +194,18 @@ void setup() {
   pinMode(Hall_Four   , INPUT_PULLUP);
   pinMode(Hall_Five   , INPUT_PULLUP);
 
-  //attachInterrupt(digitalPinToInterrupt(Hall_One)    , Hall_One_Hit    , FALLING );
+  attachInterrupt(digitalPinToInterrupt(Hall_One)    , Hall_One_Hit    , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Two)    , Hall_Two_Hit    , FALLING );
-  //attachInterrupt(digitalPinToInterrupt(Hall_Three)  , Hall_Three_Hit  , FALLING );
+  attachInterrupt(digitalPinToInterrupt(Hall_Three)  , Hall_Three_Hit  , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Four)   , Hall_Four_Hit   , FALLING );
-  //attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
+  attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
   //initilazatoin of LED pius
   pinMode(LED_White   , HIGH);
   pinMode(LED_Blue    , HIGH);
   pinMode(LED_Green   , HIGH);
   pinMode(LED_Yellow  , HIGH);
   pinMode(LED_Red     , HIGH);
-
+  
   
   //--------------------------------------------------------------------//
 }
@@ -202,20 +214,24 @@ void loop() {
   delay(1000);
   Serial.println(" ");
   Serial.println("Begin");
-  Mode = 1;
+  Mode = 0;
   
   for( ; ; )
   {
     switch(Mode) {
     
     case 0: //case to stop the cart
+
+      Serial.println(Pot_Position);
+      //Serial.println(Pot_Velocity);
+      
       if(Ready_For_Data == false)
       {
         Ready_For_Data = true;
       }
       Config_Mode = false;
       Desired_Motor_Speed = 0;
-      delay(100);
+      delay(10);
     break;
     //this case uses a config opperation
     //it current travels slowly left towards hall 1
@@ -249,8 +265,7 @@ void loop() {
       Mode = 0;
     break;
     //temp state to initiate SPI transfer
-    case 2:
-
+//    case 2:
       SPI_Manager();
       Ready_For_Data = false;
       Mode = 0;  
@@ -588,6 +603,60 @@ void SPI_Timer(void)
     Ready_For_Data = false;
     Mode = 2;
   }
+}
+//***********************************************************************//
+//Sectoin for POT managment
+
+//function to read the pot and calculate the anguler position and speed
+void Mary_Jane(void) 
+{
+  static float Anguler_Count[10];
+  static float sum   = 0;
+  static int   count = 0;
+  static int   dif   = 0;
+  //calcultes the location of the pot Pot_Offset needs to be configured
+  Pot_Position = (analogRead(Pot)*Degree_Per_Bit) - Pot_Offset;
+  //if the location is below 0 ie between true 0 and pit offset
+  //this statment correct for that
+  if(Pot_Position > 180)
+  {
+    Pot_Position = Pot_Position - 360;
+  }
+  //used to take a rolling avrage for the position output
+  Anguler_Count[count] = Pot_Position;
+  count++;
+  if(count > 9)
+  {
+    count = 0;
+  }
+  //now the lates pot value has been loaded the avrage can be found
+  sum = 0;
+  for(int i = 0; i < 10; i++)
+  {
+    sum += Anguler_Count[i];
+  }
+  Pot_Position = sum/10;
+  //velocity is more complecated
+  //to take an avrage the change in velocity over the anguler_count needs to be taken
+  sum = 0;
+  for (int i = 0; i < 9; i++)
+  {
+    //findes the velocity for each element in the count
+    //the frequency is at 1000 1/1000 = 0.001
+    if(Anguler_Count[i+1] > 0 && Anguler_Count[i] < 0 || Anguler_Count[i+1] < 0 && Anguler_Count[i] > 0)
+    {
+      dif = Anguler_Count[i+1]-Anguler_Count[i];
+      dif = 360 - dif;
+      sum = (dif)/0.001;
+    }
+    else
+    {
+      dif = Anguler_Count[i+1]-Anguler_Count[i];
+      sum = (dif)/0.001;
+    }
+    
+  }
+  Pot_Velocity = sum/10;
 }
 /*************************************************************
 Jacob Threadgould 2016
