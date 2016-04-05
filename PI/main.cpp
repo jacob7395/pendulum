@@ -31,17 +31,12 @@
 #define NUMBER_OF_BYTES 10
 
 char SPI_OUT   	[NUMBER_OF_BYTES];
-<<<<<<< HEAD
 unsigned char SPI_BUFFER	[NUMBER_OF_BYTES];
 char SPI_IN 	[NUMBER_OF_BYTES];
 
 volatile short Step_Count           = 0;
 volatile short Pendelum_Angle_temp  = 0;
 volatile float Pendelum_Angle       = 0;
-=======
-char SPI_BUFFER	[NUMBER_OF_BYTES];
-char SPI_IN 	[NUMBER_OF_BYTES];
->>>>>>> 3171cc4249f7c9663363b79e73ef26e8d7693a91
 
 volatile int i;
 volatile unsigned int Angle;
@@ -64,15 +59,9 @@ void SPI_Req_ISR() {
 	SPI_OUT[3]=0x00; // direction 0 = +ve
 
 	// form cheksum
-<<<<<<< HEAD
 	for (i=0, SPI_OUT[NUMBER_OF_BYTES-1]=0; i<NUMBER_OF_BYTES-1; ++i)
 	{
 		SPI_OUT[NUMBER_OF_BYTES-1] += SPI_OUT[i];
-=======
-	for (i=0, Packet[NUMBER_OF_BYTES-1]=0; i<NUMBER_OF_BYTES-1; ++i)
-	{
-		SPI_OUT[NUMBER_OF_BYTES-1] += Packet[i];
->>>>>>> 3171cc4249f7c9663363b79e73ef26e8d7693a91
     }
 
 	//copy to buffer for tx
@@ -96,11 +85,7 @@ void SPI_Req_ISR() {
 	//coung the number of packets recived
 	++Packets;
 	//check for start byte
-<<<<<<< HEAD
 	if (SPI_BUFFER[0]==0x55)
-=======
-	if (buffer[0]==0x55)
->>>>>>> 3171cc4249f7c9663363b79e73ef26e8d7693a91
 	{
 		chksum = 0;
 		//form the checksum for the resived data
@@ -109,7 +94,6 @@ void SPI_Req_ISR() {
 			chksum += SPI_IN[i];
         }
         //if checksum is correct print the spi data
-<<<<<<< HEAD
 		if (chksum == SPI_BUFFER[NUMBER_OF_BYTES-1])
 		{
             printf("Packets recived %02i, Checksum errors %02i\n", Packets, ChksumErrorCount);
@@ -130,26 +114,12 @@ void SPI_Req_ISR() {
 
             printf("%03f\n"  , Pendelum_Angle);
             printf("%02i\n\n", Step_Count);
-=======
-		if (chksum==buffer[NUMBER_OF_BYTES])
-		{
-            printf("%02x\n", SPI_IN[0]);
-            printf("%02x\n", SPI_IN[1]);
-            printf("%02x\n", SPI_IN[2]);
-            printf("%02x\n", SPI_IN[3]);
-            printf("%02x\n", SPI_IN[4]);
-            printf(" \n",);
->>>>>>> 3171cc4249f7c9663363b79e73ef26e8d7693a91
 		}
 		//else print data anc a error code
 		else
 		{
 			ChksumErrorCount++;
-<<<<<<< HEAD
 			for (i=0; i<NUMBER_OF_BYTES; ++i)
-=======
-			for (i=0; i<NUMBER_OF_BYTES-1; ++i)
->>>>>>> 3171cc4249f7c9663363b79e73ef26e8d7693a91
 			{
                 printf("%02x   ", SPI_OUT[i]);
                 printf("%02x \n", SPI_IN [i]);
@@ -178,7 +148,7 @@ int main(int argc, char **argv)
 
 	wiringPiSetup();
 
-	wiringPiSPISetup(0, 2000000);
+	wiringPiSPISetup(0, 3000000);
 
 	pinMode(0, INPUT);
 	pullUpDnControl(0, PUD_UP);
