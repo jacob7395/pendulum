@@ -6,10 +6,13 @@ pi that will retrun the next actoin.
 
 Disclaimer i'm dyslexic and there is no spell check
 *************************************************************/
+
 //https://github.com/ivanseidel/DueTimer
 #include <DueTimer.h>
 #include <SPI.h>
 #include <string.h>
+#include <math.h>
+#include <PID_v1.h>
 
 //this defines how often (mS) we request SPI transfer from Pi
 #define TX_INTERVAL 50
@@ -19,6 +22,10 @@ Disclaimer i'm dyslexic and there is no spell check
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
 #define NUMBER_OF_BYTES 5
+//M/sec
+#define MAX_SPEED 1
+//first stage the program will enter after inital setup
+#define INITAL_MODE 6
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -35,6 +42,8 @@ void Hall_Five_Hit   (void);
 //SPI
 unsigned char GetByteFromSPI(void);
 void SPI_Manager(void);
+//pot managment
+void Mary_Jane(void);
 
 //---------------------------------------------------------------//
 //global and const varible decloratoin
@@ -50,6 +59,13 @@ const int FAULT    = 33;
 
 const int Step_Res = 1;
 const int Acceleration_Period_ms = 15;
+//Analog pin for the pot using in adc
+const int Pot            = 11;
+const int Pot_Resolution = 12;
+float     Degree_Per_Bit = 0;
+float     Pot_Position   = 0;
+float     Pot_Velocity   = 0;
+float     Pot_Offset     = 62.9;
 
 bool Direction = 1;
 int Step_Count = 0;
@@ -77,6 +93,12 @@ int Hall_Two    = 24;
 int Hall_Three  = 26;
 int Hall_Four   = 28;
 int Hall_Five   = 30;
+//represent the position of each hall sensor nomolised around hall three
+int Hall_One_Position    = -1378;
+int Hall_Two_Position    = -1166;
+int Hall_Three_Position  =     0;
+int Hall_Four_Position   =  1169;
+int Hall_Five_Position   =  1398;
 //LED pins
 int LED_White   = 35;
 int LED_Blue    = 37;
@@ -87,6 +109,8 @@ int LED_Red     = 43;
 int Mode = 0;
 //when new speed recived plase hear and set mode to 1 for speed change
 int New_Speed = 0;
+//used in mode 5 for motor preformance testing
+float speed_test = 0;
 
 int Current_Frequency = 0; //varible to hold current frequency(pps) of the motor
 bool Config_Mode = false; //tell the system that cofig mode is running
@@ -105,6 +129,20 @@ int SensorDataAvailablePin = 49; // tells Pi that sensor data is ready for SPI t
 
 bool Ready_For_Data = false;
 
+unsigned long timestamp1 = 0;
+unsigned long timestamp2 = 0;
+//---------------------------------------------------------------//
+// PID varibles
+double pidSetpoint, pidInput, pidOutput;
+
+volatile long stepRate;
+//difference between real angle and desired angle
+float error = 0;
+//degrees -179 -> 180
+float encoderAngle = 0;
+
+// create the PID controller
+PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 65, 2, DIRECT); //tuning
 //***********************************************************************//
 void setup() {
 
@@ -153,18 +191,24 @@ void setup() {
   SPI_out[3] = 0x03;
   //Timer 3 starts the SPI data transfer
   delay(100);
-  Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
+  //Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
 
   //--------------------------------------------------------------------//
   //Motor and sensor setup
-
+  //ADC pin for the pot and seting analog reselution
+  analogReadResolution(Pot_Resolution);
+  Degree_Per_Bit = 350/pow(2,Pot_Resolution);
+  Timer4.attachInterrupt(Mary_Jane).setFrequency(1000).start();
   //establish motor direction toggle pins
   pinMode(Pulse  , OUTPUT); //
   pinMode(Dir    , OUTPUT); //
   pinMode(EN     , INPUT ); //
-  pinMode(RESET  , HIGH  ); //
-  pinMode(SLEEP  , HIGH  ); //
+  pinMode(RESET  , OUTPUT); //
+  pinMode(SLEEP  , OUTPUT); //
   pinMode(FAULT  , INPUT ); //
+
+  digitalWrite(RESET,HIGH);
+  digitalWrite(SLEEP,HIGH);
   
   //clear pulse at the start of program
   g_APinDescription[Pulse].pPort -> PIO_CODR = g_APinDescription[Pulse].ulPin;
@@ -182,39 +226,52 @@ void setup() {
   pinMode(Hall_Four   , INPUT_PULLUP);
   pinMode(Hall_Five   , INPUT_PULLUP);
 
-  //attachInterrupt(digitalPinToInterrupt(Hall_One)    , Hall_One_Hit    , FALLING );
+  attachInterrupt(digitalPinToInterrupt(Hall_One)    , Hall_One_Hit    , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Two)    , Hall_Two_Hit    , FALLING );
-  //attachInterrupt(digitalPinToInterrupt(Hall_Three)  , Hall_Three_Hit  , FALLING );
+  attachInterrupt(digitalPinToInterrupt(Hall_Three)  , Hall_Three_Hit  , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Four)   , Hall_Four_Hit   , FALLING );
-  //attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
+  attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
   //initilazatoin of LED pius
-  pinMode(LED_White   , HIGH);
-  pinMode(LED_Blue    , HIGH);
-  pinMode(LED_Green   , HIGH);
-  pinMode(LED_Yellow  , HIGH);
-  pinMode(LED_Red     , HIGH);
-
-  
+  pinMode(LED_White   , OUTPUT);
+  pinMode(LED_Blue    , OUTPUT);
+  pinMode(LED_Green   , OUTPUT);
+  pinMode(LED_Yellow  , OUTPUT);
+  pinMode(LED_Red     , OUTPUT);
   //--------------------------------------------------------------------//
+  //PID setup
+
+  // PID variables
+  pidInput    = 0;
+  pidOutput   = 0;
+  pidSetpoint = 0;
+  // turn PID on
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(-256.0, 256.0);
+  myPID.SetSampleTime(100); // number of calculations per second
+  // get rid of initial pid kick
+  pidInput = error;
+  for (int i=0; i<5; ++i) {
+    myPID.Compute();
+    delay(500);
+  }
 }
 //***********************************************************************//
 void loop() {
   delay(1000);
   Serial.println(" ");
   Serial.println("Begin");
-  Mode = 1;
-  
+  Mode = 4;
+
   for( ; ; )
   {
     switch(Mode) {
     
-    case 0: //case to stop the cart
-      if(Ready_For_Data == false)
-      {
-        Ready_For_Data = true;
-      }
+    case 0: //case to stop the cart and test code
       Config_Mode = false;
-      Desired_Motor_Speed = 0;
+      Serial.print((analogRead(Pot)*Degree_Per_Bit) - Pot_Offset);
+      Serial.print("    ");
+      Serial.println(Pot_Position);
+      
       delay(100);
     break;
     //this case uses a config opperation
@@ -246,16 +303,128 @@ void loop() {
       Serial.print("Track length in meters is ");
       Serial.println(0.00045*Step_Count);
       //move to standerd opperation mode
-      Mode = 0;
+      Mode = 1;
     break;
-    //temp state to initiate SPI transfer
+    //state to contorl stander communication operations
     case 2:
+      //setup the standerd SPI_out data in normal conditions
+      //the first byte will reperesnt the position
+      //data gatherd from case 1 allows accuret possisoning of each hall sensor
+      if(Step_Count <= -1166 && Step_Count > -1379)
+      {
+        SPI_out[1] = 0x01;
+      }
+      else if(Step_Count <= 1169 && Step_Count > -1166)
+      {
+        SPI_out[1] = 0x02;
+      }
+      else if(Step_Count <= 1398 && Step_Count > 1169)
+      {
+        SPI_out[1] = 0x03;
+      }
 
       SPI_Manager();
       Ready_For_Data = false;
       Mode = 0;  
     break;
-    
+    //case position the cart in the middle of the track and stop
+    case 3:
+      digitalWrite(LED_Green, LOW);
+      noInterrupts();
+      //if step count is greater than 2 move towards the middle
+      if(Step_Count > Hall_Three_Position+2)
+      {
+        Desired_Motor_Speed = -0.4;
+      }
+      //if step count if less than 2 move toward the middle
+      else if(Step_Count < Hall_Three_Position-2)
+      {
+        Desired_Motor_Speed =  0.4;
+      }
+      else if(Step_Count <= Hall_Three_Position+2 && Step_Count >= Hall_Three_Position-2 )
+      {
+        interrupts();
+        Desired_Motor_Speed = 0;
+        digitalWrite(LED_Green, HIGH);
+        Mode = INITAL_MODE;
+      }
+      interrupts();
+      delay(10);
+    break;
+    //Start mode used to find hall 5
+    //when hall 5 is hit the mode is switchd to 3 moveing the cart to the middle of the track
+    case 4:
+      Desired_Motor_Speed = 0.3;
+    break;
+    //Start mode used to test motor preformas
+    //moves the cart at random speeds and in random directions
+    case 5:
+      speed_test = random(8, 10);
+      Serial.print(" ");
+      Serial.println(speed_test);
+      noInterrupts();
+      Desired_Motor_Speed =  speed_test/10;
+      interrupts();
+      speed_test = random(10, 500);
+      while(Step_Count <  speed_test) 
+      {
+        delay(1);
+      };
+
+      speed_test = random(8, 10);
+      Serial.println(-speed_test);
+      noInterrupts();
+      Desired_Motor_Speed = -speed_test/10;
+      interrupts();
+      speed_test = random(10, 500);
+      while(Step_Count > -speed_test) 
+      {
+        delay(1); 
+      };
+    break;
+    //Mode for PID Control works between x and y degrees
+    case 6:
+      static bool Direction_Latch = 1;
+      //get the current encoder angle
+      noInterrupts();
+      encoderAngle = Pot_Position;
+      interrupts();
+
+      if(Step_Count > 10)
+      {
+        pidSetpoint =  1.5;
+      }
+      else if(Step_Count < -10)
+      {
+        pidSetpoint = -1;
+      }
+      
+      //difference from desiredAngle, doesn't account for desired angles other than 0
+      if(Pot_Position > 0)
+      {
+        error = encoderAngle - 180 - 1;
+      }
+      else if(Pot_Position < 0)
+      {
+        error = 180 + encoderAngle + 1;
+      }
+      
+      //do the PID stuff
+      pidInput = error;
+      myPID.Compute();
+
+      // if the pendulum is too far off of vertical to recover, turn off the PID and motor
+      if (error > 24 || error < -25) {
+        myPID.SetMode(MANUAL);
+        pidOutput = 0;
+        Desired_Motor_Speed = 0;
+      } else { //in bounds
+        myPID.SetMode(AUTOMATIC);
+        Desired_Motor_Speed = (float(pidOutput) * MAX_SPEED) / 256;
+        //Serial.println((float(pidOutput) * MAX_SPEED) / 256);
+      }
+      delay(10);
+    break;
     }
   }
 }
@@ -284,7 +453,7 @@ void Set_Motor_Speed(void)
   }
   //if the DS is less than 0 and the CF is = to 0 and the direction is not 0 change the direction
   //if the cart has stopped but the direction is incorrect change directoin
-  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 5)
+  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 10)
   {
     Set_Directoin(0);
     Delay_Count = 0;
@@ -304,7 +473,7 @@ void Set_Motor_Speed(void)
   }
   //if DS is grater then 0 and the CF equels 0 and the direction is worn change direction
   //if the cart is not moving but the direction is wrong changedirection
-  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 5)
+  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 10)
   {
     Set_Directoin(1);
     Delay_Count = 0;
@@ -316,7 +485,10 @@ void Set_Motor_Speed(void)
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * 1) * Distance_Per_Step) * 2;
   }
   //This section controles the acceleration/dseleratoin of the motor by stepping the PPS up and down
-  static int PPS_Step = 333;  //The PPS_Step set the amount of steps that can be incred at one time without staling
+  //uses a verible speed with the PPS
+  //does this through the folowing exponetal function
+  float Power = (10 * (float(Current_Frequency)/4444))/2;
+  int PPS_Step = -exp(Power)+200;  //The PPS_Step sets the amount of steps that can be incred at one time without staling
   //If the diffrence in frequency is less than or grater than 2*PPS_Step and the DS is larger then the CF and the CF is at 0 incress the PPS by 2* the PPS_Step
   //When the cart is at 0 CF the PPS can be increced by double the PPS_Step and not stall this increces the acceleration rate
   if (((Desired_Frequency - Current_Frequency) > PPS_Step * 2 || (Desired_Frequency - Current_Frequency) < -PPS_Step * 2) && (Desired_Frequency > Current_Frequency) && Current_Frequency == 0)
@@ -357,6 +529,7 @@ void Set_Motor_Speed(void)
   {
     Timer1.setFrequency(Current_Frequency).start();
     Applyed_Frequency = Current_Frequency;
+    digitalWrite(LED_Blue,HIGH);
   }
   //if CF is 0 stop the interupt
   else if (Current_Frequency == 0)
@@ -364,6 +537,7 @@ void Set_Motor_Speed(void)
     Timer1.stop();
     //clear the pulse pin when timer is disabled to stop annoying buzzing
     g_APinDescription[Pulse].pPort -> PIO_CODR = g_APinDescription[Pulse].ulPin;
+    digitalWrite(LED_Blue,LOW);
   }
   //---------------------------------------------------------------//
 }
@@ -434,10 +608,12 @@ void Hall_One_Hit   (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_One_Position;
+      Mode = 3; //mode to return cart to the middle of the track
     }
     else
     {
+      Step_Count = 0;
       Serial.println("Hall One Hit");
       Serial.println(Step_Count);
       Desired_Motor_Speed = 0;
@@ -448,7 +624,7 @@ void Hall_Two_Hit   (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Two_Position;
     }
     else
     {
@@ -461,7 +637,7 @@ void Hall_Three_Hit (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Three_Position;
     }
     else
     {
@@ -474,7 +650,7 @@ void Hall_Four_Hit  (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Four_Position;
     }
     else
     {
@@ -487,7 +663,8 @@ void Hall_Five_Hit  (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Five_Position;
+      Mode = 3; //mode to return cart to the middle of the track
     }
     else
     {
@@ -588,6 +765,56 @@ void SPI_Timer(void)
     Ready_For_Data = false;
     Mode = 2;
   }
+}
+//***********************************************************************//
+//Sectoin for POT managment
+
+//function to read the pot and calculate the anguler position and speed
+void Mary_Jane(void) 
+{
+  static float Anguler_Count [10];
+  static float Velocity_Count[9];
+  static float sum   = 0;
+  static int   count = 0;
+  static int   dif   = 0;
+  //calcultes the location of the pot Pot_Offset needs to be configured
+  Pot_Position = (analogRead(Pot)*Degree_Per_Bit) - Pot_Offset;
+  //used to take a rolling avrage for the position output
+  Anguler_Count[count] = Pot_Position;
+  count++;
+  if(count > 9)
+  {
+    count = 0;
+  }
+  //now the lates pot value has been loaded the avrage can be found
+  sum = 0;
+  for(int i = 0; i < 10; i++)
+  {
+    sum += Anguler_Count[i];
+  }
+  Pot_Position = sum/10;
+  //if the location is below 0 ie between true 0 and pit offset
+  //this statment correct for that
+  if(Pot_Position > 180)
+  {
+    Pot_Position = Pot_Position - 360;
+  }
+  //velocity is more complecated
+  //to take an avrage the change in velocity over the anguler_count needs to be taken
+  if(count < 9 && count > 0)
+  {
+    Velocity_Count[count] = (Anguler_Count[count] - Anguler_Count[count-1])/0.01;
+  }
+  else
+  {
+    Velocity_Count[count] = (Anguler_Count[count] - Anguler_Count[9])/0.01;
+  }
+  sum = 0;
+  for (int i = 0; i < 9; i++)
+  {
+    sum += Velocity_Count[i];
+  }
+  Pot_Velocity = sum/9;
 }
 /*************************************************************
 Jacob Threadgould 2016
