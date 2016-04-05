@@ -28,10 +28,15 @@
 #include <wiringPiSPI.h>
 
 #define PIN 3
-#define NUMBER_OF_BYTES 5
+#define NUMBER_OF_BYTES 10
 
-unsigned char Packet[NUMBER_OF_BYTES];
-unsigned char buffer[NUMBER_OF_BYTES];
+char SPI_OUT   	[NUMBER_OF_BYTES];
+unsigned char SPI_BUFFER	[NUMBER_OF_BYTES];
+char SPI_IN 	[NUMBER_OF_BYTES];
+
+volatile short Step_Count           = 0;
+volatile short Pendelum_Angle_temp  = 0;
+volatile float Pendelum_Angle       = 0;
 
 volatile int i;
 volatile unsigned int Angle;
@@ -48,57 +53,82 @@ volatile int PacketFault=0;
 
 void SPI_Req_ISR() {
 
-	Packet[0]=0x55;
-	Packet[1]=0xe8; // speed lo - 1000 pps
-	Packet[2]=0x03; // speed hi - 1000 pps
-	Packet[3]=0x00; // direction 0 = +ve
+	SPI_OUT[0]=0x55;	// Stat byte
+	SPI_OUT[1]=0xe8; // speed lo - 1000 pps
+	SPI_OUT[2]=0x03; // speed hi - 1000 pps
+	SPI_OUT[3]=0x00; // direction 0 = +ve
 
-	// form chksum
-	for (i=0, Packet[NUMBER_OF_BYTES-1]=0; i<NUMBER_OF_BYTES-1; ++i)
+	// form cheksum
+	for (i=0, SPI_OUT[NUMBER_OF_BYTES-1]=0; i<NUMBER_OF_BYTES-1; ++i)
 	{
-		Packet[NUMBER_OF_BYTES-1] += Packet[i];
+		SPI_OUT[NUMBER_OF_BYTES-1] += SPI_OUT[i];
     }
 
-	// copy to buffer for tx
+	//copy to buffer for tx
 	for (i=0; i<NUMBER_OF_BYTES; ++i)
 	{
-		buffer[i] = Packet[i];
+		SPI_BUFFER[i] = SPI_OUT[i];
     }
 
 	// tx 1 byte as a time as SPI master
 	for (i=0; i<NUMBER_OF_BYTES; ++i) {
-		wiringPiSPIDataRW(0, &buffer[i], 1);
+		wiringPiSPIDataRW(0, &SPI_BUFFER[i], 1);
 		//wait befor sending next byte
 		TicksNow=micros();
-		while ((micros()-TicksNow)<25);
+		while ((micros()-TicksNow)<50);
 	}
+	//copy to SPI_IN for SPI_BUFFER(now contains data from arduino)
+	for (i=0; i<NUMBER_OF_BYTES; ++i)
+	{
+		SPI_IN[i] = SPI_BUFFER[i];
+    }
+	//coung the number of packets recived
 	++Packets;
-
-	if (buffer[0]==0x55)
+	//check for start byte
+	if (SPI_BUFFER[0]==0x55)
 	{
 		chksum = 0;
+		//form the checksum for the resived data
 		for (i=0; i<NUMBER_OF_BYTES-1; ++i)
 		{
-			chksum += buffer[i];
+			chksum += SPI_IN[i];
         }
-		if (chksum==buffer[NUMBER_OF_BYTES])
+        //if checksum is correct print the spi data
+		if (chksum == SPI_BUFFER[NUMBER_OF_BYTES-1])
 		{
-            printf("%02x\n", buffer[0]);
-            printf("%02x\n", buffer[1]);
-            printf("%02x\n", buffer[2]);
-            printf("%02x\n", buffer[3]);
-            printf("%02x\n", buffer[4]);
-            printf(" \n", buffer[4]);
+            printf("Packets recived %02i, Checksum errors %02i\n", Packets, ChksumErrorCount);
+            for (i=0; i<NUMBER_OF_BYTES; ++i)
+			{
+                printf("%02x   ", SPI_OUT[i]);
+                printf("%02x\n" , SPI_IN [i]);
+            }
+            printf(" \n");
+            Step_Count = 0;
+            Step_Count = Step_Count |  SPI_IN[1];
+            Step_Count = Step_Count | (SPI_IN[2]<<8);
+            Pendelum_Angle_temp = 0;
+            Pendelum_Angle_temp = Pendelum_Angle_temp |  SPI_IN[3];
+            Pendelum_Angle_temp = Pendelum_Angle_temp | (SPI_IN[4]<<8);
+
+            Pendelum_Angle = float(Pendelum_Angle_temp)/100;
+
+            printf("%03f\n"  , Pendelum_Angle);
+            printf("%02i\n\n", Step_Count);
 		}
+		//else print data anc a error code
 		else
 		{
 			ChksumErrorCount++;
-			for (i=0; i<12; ++i)
+			for (i=0; i<NUMBER_OF_BYTES; ++i)
 			{
-				printf("Checksum error %02x\n", buffer[i]);
+                printf("%02x   ", SPI_OUT[i]);
+                printf("%02x \n", SPI_IN [i]);
             }
+            printf("Checksum error %02x, %02i\n", chksum, ChksumErrorCount);
+            printf(" \n");
 		}
 	}
+	//if bad start bit print error
 	else
 	{
 		++BadSOM;
