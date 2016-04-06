@@ -10,6 +10,7 @@ Disclaimer i'm dyslexic and there is no spell check
 #include <DueTimer.h>
 #include <SPI.h>
 #include <string.h>
+#include <math.h>
 
 //this defines how often (mS) we request SPI transfer from Pi
 #define TX_INTERVAL 50
@@ -35,6 +36,8 @@ void Hall_Five_Hit   (void);
 //SPI
 unsigned char GetByteFromSPI(void);
 void SPI_Manager(void);
+//pot managment
+void Mary_Jane(void);
 
 //---------------------------------------------------------------//
 //global and const varible decloratoin
@@ -56,7 +59,7 @@ const int Pot_Resolution = 10;
 float     Degree_Per_Bit = 0;
 float     Pot_Position   = 0;
 float     Pot_Velocity   = 0;
-float     Pot_Offset     = 71.37;
+float     Pot_Offset     = 64.4;
 
 bool Direction = 1;
 int Step_Count = 0;
@@ -84,6 +87,12 @@ int Hall_Two    = 24;
 int Hall_Three  = 26;
 int Hall_Four   = 28;
 int Hall_Five   = 30;
+//represent the position of each hall sensor nomolised around hall three
+int Hall_One_Position    = -1378;
+int Hall_Two_Position    = -1166;
+int Hall_Three_Position  =     0;
+int Hall_Four_Position   =  1169;
+int Hall_Five_Position   =  1398;
 //LED pins
 int LED_White   = 35;
 int LED_Blue    = 37;
@@ -169,14 +178,17 @@ void setup() {
   //ADC pin for the pot and seting analog reselution
   analogReadResolution(Pot_Resolution);
   Degree_Per_Bit = 360/pow(2,Pot_Resolution);
-  Timer4.attachInterrupt(Mary_Jane).setFrequency(1000).start();
+  Timer4.attachInterrupt(Mary_Jane).setFrequency(10).start();
   //establish motor direction toggle pins
   pinMode(Pulse  , OUTPUT); //
   pinMode(Dir    , OUTPUT); //
   pinMode(EN     , INPUT ); //
-  pinMode(RESET  , HIGH  ); //
-  pinMode(SLEEP  , HIGH  ); //
+  pinMode(RESET  , OUTPUT); //
+  pinMode(SLEEP  , OUTPUT); //
   pinMode(FAULT  , INPUT ); //
+
+  digitalWrite(RESET,HIGH);
+  digitalWrite(SLEEP,HIGH);
   
   //clear pulse at the start of program
   g_APinDescription[Pulse].pPort -> PIO_CODR = g_APinDescription[Pulse].ulPin;
@@ -200,11 +212,11 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(Hall_Four)   , Hall_Four_Hit   , FALLING );
   attachInterrupt(digitalPinToInterrupt(Hall_Five)   , Hall_Five_Hit   , FALLING );
   //initilazatoin of LED pius
-  pinMode(LED_White   , HIGH);
-  pinMode(LED_Blue    , HIGH);
-  pinMode(LED_Green   , HIGH);
-  pinMode(LED_Yellow  , HIGH);
-  pinMode(LED_Red     , HIGH);
+  pinMode(LED_White   , OUTPUT);
+  pinMode(LED_Blue    , OUTPUT);
+  pinMode(LED_Green   , OUTPUT);
+  pinMode(LED_Yellow  , OUTPUT);
+  pinMode(LED_Red     , OUTPUT);
   
   
   //--------------------------------------------------------------------//
@@ -214,24 +226,40 @@ void loop() {
   delay(1000);
   Serial.println(" ");
   Serial.println("Begin");
-  Mode = 0;
+  Mode = 4;
   
+  float speed_test = 0;
+
   for( ; ; )
   {
     switch(Mode) {
     
     case 0: //case to stop the cart
-
-      Serial.println(Pot_Position);
-      //Serial.println(Pot_Velocity);
       
-      if(Ready_For_Data == false)
-      {
-        Ready_For_Data = true;
-      }
       Config_Mode = false;
-      Desired_Motor_Speed = 0;
-      delay(10);
+
+      speed_test = random(7, 10);
+      Serial.print(" ");
+      Serial.println(speed_test);
+      noInterrupts();
+      Desired_Motor_Speed =  speed_test/10;
+      interrupts();
+      speed_test = random(10, 500);
+      while(Step_Count <  speed_test) 
+      {
+        delay(1);
+      };
+
+      speed_test = random(7, 10);
+      Serial.println(-speed_test);
+      noInterrupts();
+      Desired_Motor_Speed = -speed_test/10;
+      interrupts();
+      speed_test = random(10, 500);
+      while(Step_Count > -speed_test) 
+      {
+        delay(1); 
+      };
     break;
     //this case uses a config opperation
     //it current travels slowly left towards hall 1
@@ -262,13 +290,58 @@ void loop() {
       Serial.print("Track length in meters is ");
       Serial.println(0.00045*Step_Count);
       //move to standerd opperation mode
-      Mode = 0;
+      Mode = 1;
     break;
-    //temp state to initiate SPI transfer
-//    case 2:
+    //state to contorl stander communication operations
+    case 2:
+      //setup the standerd SPI_out data in normal conditions
+      //the first byte will reperesnt the position
+      //data gatherd from case 1 allows accuret possisoning of each hall sensor
+      if(Step_Count <= -1166 && Step_Count > -1379)
+      {
+        SPI_out[1] = 0x01;
+      }
+      else if(Step_Count <= 1169 && Step_Count > -1166)
+      {
+        SPI_out[1] = 0x02;
+      }
+      else if(Step_Count <= 1398 && Step_Count > 1169)
+      {
+        SPI_out[1] = 0x03;
+      }
+
       SPI_Manager();
       Ready_For_Data = false;
       Mode = 0;  
+    break;
+    //case position the cart in the middle of the track and stop
+    case 3:
+      digitalWrite(LED_Green, LOW);
+      noInterrupts();
+      //if step count is greater than 2 move towards the middle
+      if(Step_Count > 2)
+      {
+        Desired_Motor_Speed = -float(Step_Count)/1800 - 0.1;
+      }
+      //if step count if less than 2 move toward the middle
+      else if(Step_Count < -2)
+      {
+        Desired_Motor_Speed = -float(Step_Count)/1800 + 0.1;
+      }
+      else if(Step_Count <= 2 && Step_Count >= -2 )
+      {
+        interrupts();
+        Desired_Motor_Speed = 0;
+        digitalWrite(LED_Green, HIGH);
+        Mode = 0;
+      }
+      interrupts();
+      delay(10);
+    break;
+    //Start mode used to find hall 5
+    //when hall 5 is hit the mode is switchd to 3 moveing the cart to the middle of the track
+    case 4:
+      Desired_Motor_Speed = -0.3;
     break;
     
     }
@@ -299,7 +372,7 @@ void Set_Motor_Speed(void)
   }
   //if the DS is less than 0 and the CF is = to 0 and the direction is not 0 change the direction
   //if the cart has stopped but the direction is incorrect change directoin
-  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 5)
+  else if(Desired_Motor_Speed < 0 && Current_Frequency == 0 && Direction == 1 && Delay_Count >= 10)
   {
     Set_Directoin(0);
     Delay_Count = 0;
@@ -319,7 +392,7 @@ void Set_Motor_Speed(void)
   }
   //if DS is grater then 0 and the CF equels 0 and the direction is worn change direction
   //if the cart is not moving but the direction is wrong changedirection
-  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 5)
+  else if(Desired_Motor_Speed > 0 && Current_Frequency == 0 && Direction == 0 && Delay_Count >= 10)
   {
     Set_Directoin(1);
     Delay_Count = 0;
@@ -331,7 +404,14 @@ void Set_Motor_Speed(void)
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * 1) * Distance_Per_Step) * 2;
   }
   //This section controles the acceleration/dseleratoin of the motor by stepping the PPS up and down
-  static int PPS_Step = 333;  //The PPS_Step set the amount of steps that can be incred at one time without staling
+  // Serial.print(Desired_Frequency);
+  float Power = (10 * (float(Current_Frequency)/4444))/2;
+  int PPS_Step = -exp(Power)+200;  //The PPS_Step sets the amount of steps that can be incred at one time without staling
+  //int PPS_Step = 40;
+  // Serial.print("  ");
+  // Serial.print(PPS_Step);
+  // Serial.print("  ");
+  // Serial.println(Power);
   //If the diffrence in frequency is less than or grater than 2*PPS_Step and the DS is larger then the CF and the CF is at 0 incress the PPS by 2* the PPS_Step
   //When the cart is at 0 CF the PPS can be increced by double the PPS_Step and not stall this increces the acceleration rate
   if (((Desired_Frequency - Current_Frequency) > PPS_Step * 2 || (Desired_Frequency - Current_Frequency) < -PPS_Step * 2) && (Desired_Frequency > Current_Frequency) && Current_Frequency == 0)
@@ -372,6 +452,7 @@ void Set_Motor_Speed(void)
   {
     Timer1.setFrequency(Current_Frequency).start();
     Applyed_Frequency = Current_Frequency;
+    digitalWrite(LED_Blue,HIGH);
   }
   //if CF is 0 stop the interupt
   else if (Current_Frequency == 0)
@@ -379,6 +460,7 @@ void Set_Motor_Speed(void)
     Timer1.stop();
     //clear the pulse pin when timer is disabled to stop annoying buzzing
     g_APinDescription[Pulse].pPort -> PIO_CODR = g_APinDescription[Pulse].ulPin;
+    digitalWrite(LED_Blue,LOW);
   }
   //---------------------------------------------------------------//
 }
@@ -449,10 +531,12 @@ void Hall_One_Hit   (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_One_Position;
+      Mode = 3; //mode to return cart to the middle of the track
     }
     else
     {
+      Step_Count = 0;
       Serial.println("Hall One Hit");
       Serial.println(Step_Count);
       Desired_Motor_Speed = 0;
@@ -463,7 +547,7 @@ void Hall_Two_Hit   (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Two_Position;
     }
     else
     {
@@ -476,7 +560,7 @@ void Hall_Three_Hit (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Three_Position;
     }
     else
     {
@@ -489,7 +573,7 @@ void Hall_Four_Hit  (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Four_Position;
     }
     else
     {
@@ -502,7 +586,8 @@ void Hall_Five_Hit  (void)
 {
     if(Config_Mode == false)
     {
-      
+      Step_Count = Hall_Five_Position;
+      Mode = 3; //mode to return cart to the middle of the track
     }
     else
     {
@@ -643,15 +728,15 @@ void Mary_Jane(void)
   {
     //findes the velocity for each element in the count
     //the frequency is at 1000 1/1000 = 0.001
-    if(Anguler_Count[i+1] > 0 && Anguler_Count[i] < 0 || Anguler_Count[i+1] < 0 && Anguler_Count[i] > 0)
+    //the if statment getting red of the error when passing form 180 to -178
+    dif = Anguler_Count[9]-Anguler_Count[8];
+    if((Anguler_Count[9] > 0 && Anguler_Count[8] < 0 || Anguler_Count[9] < 0 && Anguler_Count[8] > 0) && dif >= 300)
     {
-      dif = Anguler_Count[i+1]-Anguler_Count[i];
       dif = 360 - dif;
       sum = (dif)/0.001;
     }
     else
     {
-      dif = Anguler_Count[i+1]-Anguler_Count[i];
       sum = (dif)/0.001;
     }
     
