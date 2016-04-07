@@ -6,11 +6,13 @@ pi that will retrun the next actoin.
 
 Disclaimer i'm dyslexic and there is no spell check
 *************************************************************/
+
 //https://github.com/ivanseidel/DueTimer
 #include <DueTimer.h>
 #include <SPI.h>
 #include <string.h>
 #include <math.h>
+#include <PID_v1.h>
 
 //this defines how often (mS) we request SPI transfer from Pi
 #define TX_INTERVAL 50
@@ -20,6 +22,14 @@ Disclaimer i'm dyslexic and there is no spell check
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
 #define NUMBER_OF_BYTES 5
+// encoder offset (adc bits) - this is value from adc when pole is vertical
+#define ENCODER_OFFSET 712
+// 1 mm/sec = 2.222 steps/sec
+#define STEP_CONVERSION 2.222
+// mm/sec
+#define MAX_SPEED 1
+//first stage the program will enter after inital setup
+#define INITAL_MODE 0
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -103,6 +113,8 @@ int LED_Red     = 43;
 int Mode = 0;
 //when new speed recived plase hear and set mode to 1 for speed change
 int New_Speed = 0;
+//used in mode 5 for motor preformance testing
+float speed_test = 0;
 
 int Current_Frequency = 0; //varible to hold current frequency(pps) of the motor
 bool Config_Mode = false; //tell the system that cofig mode is running
@@ -123,6 +135,14 @@ bool Ready_For_Data = false;
 
 unsigned long timestamp1 = 0;
 unsigned long timestamp2 = 0;
+//---------------------------------------------------------------//
+// PID varibles
+double pidSetpoint, pidInput, pidOutput;
+
+volatile long stepRate;
+
+// create the PID controller
+PID myPID(&pidInput, &pidOutput, &pidSetpoint, 15, 4, 1, DIRECT); //tuning
 //***********************************************************************//
 void setup() {
 
@@ -177,8 +197,8 @@ void setup() {
   //Motor and sensor setup
   //ADC pin for the pot and seting analog reselution
   analogReadResolution(Pot_Resolution);
-  Degree_Per_Bit = 360/pow(2,Pot_Resolution);
-  Timer4.attachInterrupt(Mary_Jane).setFrequency(10).start();
+  Degree_Per_Bit = 350/pow(2,Pot_Resolution);
+  Timer4.attachInterrupt(Mary_Jane).setFrequency(1000).start();
   //establish motor direction toggle pins
   pinMode(Pulse  , OUTPUT); //
   pinMode(Dir    , OUTPUT); //
@@ -217,9 +237,13 @@ void setup() {
   pinMode(LED_Green   , OUTPUT);
   pinMode(LED_Yellow  , OUTPUT);
   pinMode(LED_Red     , OUTPUT);
-  
-  
   //--------------------------------------------------------------------//
+  //PID setup
+
+  // PID variables
+  pidInput = 0;
+  pidOutput = 0;
+  pidSetpoint = 180;
 }
 //***********************************************************************//
 void loop() {
@@ -227,39 +251,15 @@ void loop() {
   Serial.println(" ");
   Serial.println("Begin");
   Mode = 4;
-  
-  float speed_test = 0;
 
   for( ; ; )
   {
     switch(Mode) {
     
-    case 0: //case to stop the cart
-      
+    case 0: //case to stop the cart and test code
       Config_Mode = false;
-
-      speed_test = random(7, 10);
-      Serial.print(" ");
-      Serial.println(speed_test);
-      noInterrupts();
-      Desired_Motor_Speed =  speed_test/10;
-      interrupts();
-      speed_test = random(10, 500);
-      while(Step_Count <  speed_test) 
-      {
-        delay(1);
-      };
-
-      speed_test = random(7, 10);
-      Serial.println(-speed_test);
-      noInterrupts();
-      Desired_Motor_Speed = -speed_test/10;
-      interrupts();
-      speed_test = random(10, 500);
-      while(Step_Count > -speed_test) 
-      {
-        delay(1); 
-      };
+      Serial.println(Pot_Position);
+      delay(100);
     break;
     //this case uses a config opperation
     //it current travels slowly left towards hall 1
@@ -319,21 +319,21 @@ void loop() {
       digitalWrite(LED_Green, LOW);
       noInterrupts();
       //if step count is greater than 2 move towards the middle
-      if(Step_Count > 2)
+      if(Step_Count > Hall_Two_Position+2)
       {
-        Desired_Motor_Speed = -float(Step_Count)/1800 - 0.1;
+        Desired_Motor_Speed = -0.4;
       }
       //if step count if less than 2 move toward the middle
-      else if(Step_Count < -2)
+      else if(Step_Count < Hall_Two_Position-2)
       {
-        Desired_Motor_Speed = -float(Step_Count)/1800 + 0.1;
+        Desired_Motor_Speed =  0.4;
       }
-      else if(Step_Count <= 2 && Step_Count >= -2 )
+      else if(Step_Count <= Hall_Two_Position+2 && Step_Count >= Hall_Two_Position-2 )
       {
         interrupts();
         Desired_Motor_Speed = 0;
         digitalWrite(LED_Green, HIGH);
-        Mode = 0;
+        Mode = INITAL_MODE;
       }
       interrupts();
       delay(10);
@@ -341,7 +341,33 @@ void loop() {
     //Start mode used to find hall 5
     //when hall 5 is hit the mode is switchd to 3 moveing the cart to the middle of the track
     case 4:
-      Desired_Motor_Speed = -0.3;
+      Desired_Motor_Speed = 0.3;
+    break;
+    //Start mode used to test motor preformas
+    //moves the cart at random speeds and in random directions
+    case 5:
+      speed_test = random(8, 10);
+      Serial.print(" ");
+      Serial.println(speed_test);
+      noInterrupts();
+      Desired_Motor_Speed =  speed_test/10;
+      interrupts();
+      speed_test = random(10, 500);
+      while(Step_Count <  speed_test) 
+      {
+        delay(1);
+      };
+
+      speed_test = random(8, 10);
+      Serial.println(-speed_test);
+      noInterrupts();
+      Desired_Motor_Speed = -speed_test/10;
+      interrupts();
+      speed_test = random(10, 500);
+      while(Step_Count > -speed_test) 
+      {
+        delay(1); 
+      };
     break;
     
     }
@@ -404,14 +430,10 @@ void Set_Motor_Speed(void)
     Desired_Frequency = ((Desired_Motor_Speed * Step_Res * 1) * Distance_Per_Step) * 2;
   }
   //This section controles the acceleration/dseleratoin of the motor by stepping the PPS up and down
-  // Serial.print(Desired_Frequency);
+  //uses a verible speed with the PPS
+  //does this through the folowing exponetal function
   float Power = (10 * (float(Current_Frequency)/4444))/2;
   int PPS_Step = -exp(Power)+200;  //The PPS_Step sets the amount of steps that can be incred at one time without staling
-  //int PPS_Step = 40;
-  // Serial.print("  ");
-  // Serial.print(PPS_Step);
-  // Serial.print("  ");
-  // Serial.println(Power);
   //If the diffrence in frequency is less than or grater than 2*PPS_Step and the DS is larger then the CF and the CF is at 0 incress the PPS by 2* the PPS_Step
   //When the cart is at 0 CF the PPS can be increced by double the PPS_Step and not stall this increces the acceleration rate
   if (((Desired_Frequency - Current_Frequency) > PPS_Step * 2 || (Desired_Frequency - Current_Frequency) < -PPS_Step * 2) && (Desired_Frequency > Current_Frequency) && Current_Frequency == 0)
@@ -695,7 +717,8 @@ void SPI_Timer(void)
 //function to read the pot and calculate the anguler position and speed
 void Mary_Jane(void) 
 {
-  static float Anguler_Count[10];
+  static float Anguler_Count [10];
+  static float Velocity_Count[9];
   static float sum   = 0;
   static int   count = 0;
   static int   dif   = 0;
@@ -723,25 +746,20 @@ void Mary_Jane(void)
   Pot_Position = sum/10;
   //velocity is more complecated
   //to take an avrage the change in velocity over the anguler_count needs to be taken
+  if(count < 9 && count > 0)
+  {
+    Velocity_Count[count] = (Anguler_Count[count] - Anguler_Count[count-1])/0.01;
+  }
+  else
+  {
+    Velocity_Count[count] = (Anguler_Count[count] - Anguler_Count[9])/0.01;
+  }
   sum = 0;
   for (int i = 0; i < 9; i++)
   {
-    //findes the velocity for each element in the count
-    //the frequency is at 1000 1/1000 = 0.001
-    //the if statment getting red of the error when passing form 180 to -178
-    dif = Anguler_Count[9]-Anguler_Count[8];
-    if((Anguler_Count[9] > 0 && Anguler_Count[8] < 0 || Anguler_Count[9] < 0 && Anguler_Count[8] > 0) && dif >= 300)
-    {
-      dif = 360 - dif;
-      sum = (dif)/0.001;
-    }
-    else
-    {
-      sum = (dif)/0.001;
-    }
-    
+    sum += Velocity_Count[i];
   }
-  Pot_Velocity = sum/10;
+  Pot_Velocity = sum/9;
 }
 /*************************************************************
 Jacob Threadgould 2016
