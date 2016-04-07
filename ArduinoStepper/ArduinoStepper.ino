@@ -22,14 +22,10 @@ Disclaimer i'm dyslexic and there is no spell check
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
 #define NUMBER_OF_BYTES 5
-// encoder offset (adc bits) - this is value from adc when pole is vertical
-#define ENCODER_OFFSET 712
-// 1 mm/sec = 2.222 steps/sec
-#define STEP_CONVERSION 2.222
-// mm/sec
-#define MAX_SPEED 1
+//M/sec
+#define MAX_SPEED 0.9
 //first stage the program will enter after inital setup
-#define INITAL_MODE 0
+#define INITAL_MODE 6
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -65,11 +61,11 @@ const int Step_Res = 1;
 const int Acceleration_Period_ms = 15;
 //Analog pin for the pot using in adc
 const int Pot            = 11;
-const int Pot_Resolution = 10;
+const int Pot_Resolution = 12;
 float     Degree_Per_Bit = 0;
 float     Pot_Position   = 0;
 float     Pot_Velocity   = 0;
-float     Pot_Offset     = 64.4;
+float     Pot_Offset     = 62.9;
 
 bool Direction = 1;
 int Step_Count = 0;
@@ -140,9 +136,13 @@ unsigned long timestamp2 = 0;
 double pidSetpoint, pidInput, pidOutput;
 
 volatile long stepRate;
+//difference between real angle and desired angle
+float error = 0;
+//degrees -179 -> 180
+float encoderAngle = 0;
 
 // create the PID controller
-PID myPID(&pidInput, &pidOutput, &pidSetpoint, 15, 4, 1, DIRECT); //tuning
+PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 100, 1, DIRECT); //tuning
 //***********************************************************************//
 void setup() {
 
@@ -241,9 +241,19 @@ void setup() {
   //PID setup
 
   // PID variables
-  pidInput = 0;
-  pidOutput = 0;
-  pidSetpoint = 180;
+  pidInput    = 0;
+  pidOutput   = 0;
+  pidSetpoint = 0;
+  // turn PID on
+  myPID.SetMode(AUTOMATIC);
+  myPID.SetOutputLimits(-256.0, 256.0);
+  myPID.SetSampleTime(100); // number of calculations per second
+  // get rid of initial pid kick
+  pidInput = error;
+  for (int i=0; i<5; ++i) {
+    myPID.Compute();
+    delay(500);
+  }
 }
 //***********************************************************************//
 void loop() {
@@ -258,7 +268,10 @@ void loop() {
     
     case 0: //case to stop the cart and test code
       Config_Mode = false;
+      Serial.print((analogRead(Pot)*Degree_Per_Bit) - Pot_Offset);
+      Serial.print("    ");
       Serial.println(Pot_Position);
+      
       delay(100);
     break;
     //this case uses a config opperation
@@ -319,16 +332,16 @@ void loop() {
       digitalWrite(LED_Green, LOW);
       noInterrupts();
       //if step count is greater than 2 move towards the middle
-      if(Step_Count > Hall_Two_Position+2)
+      if(Step_Count > Hall_Three_Position+2)
       {
         Desired_Motor_Speed = -0.4;
       }
       //if step count if less than 2 move toward the middle
-      else if(Step_Count < Hall_Two_Position-2)
+      else if(Step_Count < Hall_Three_Position-2)
       {
         Desired_Motor_Speed =  0.4;
       }
-      else if(Step_Count <= Hall_Two_Position+2 && Step_Count >= Hall_Two_Position-2 )
+      else if(Step_Count <= Hall_Three_Position+2 && Step_Count >= Hall_Three_Position-2 )
       {
         interrupts();
         Desired_Motor_Speed = 0;
@@ -369,7 +382,49 @@ void loop() {
         delay(1); 
       };
     break;
-    
+    //Mode for PID Control works between x and y degrees
+    case 6:
+      static bool Direction_Latch = 1;
+      //get the current encoder angle
+      noInterrupts();
+      encoderAngle = Pot_Position;
+      interrupts();
+
+      if(Step_Count > 5)
+      {
+        pidSetpoint = 1;
+      }
+      else if(Step_Count < -5)
+      {
+        pidSetpoint = -1;
+      }
+      
+      //difference from desiredAngle, doesn't account for desired angles other than 0
+      if(Pot_Position > 0)
+      {
+        error = encoderAngle - 180 - 0.5;
+      }
+      else if(Pot_Position < 0)
+      {
+        error = 180 + encoderAngle + 0.5;
+      }
+      
+      //do the PID stuff
+      pidInput = error;
+      myPID.Compute();
+
+      // if the pendulum is too far off of vertical to recover, turn off the PID and motor
+      if (error > 45 || error < -45) {
+        myPID.SetMode(MANUAL);
+        pidOutput = 0;
+        Desired_Motor_Speed = 0;
+      } else { //in bounds
+        myPID.SetMode(AUTOMATIC);
+        Desired_Motor_Speed = (float(pidOutput) * MAX_SPEED) / 256;
+        //Serial.println((float(pidOutput) * MAX_SPEED) / 256);
+      }
+      delay(10);
+    break;
     }
   }
 }
@@ -724,12 +779,6 @@ void Mary_Jane(void)
   static int   dif   = 0;
   //calcultes the location of the pot Pot_Offset needs to be configured
   Pot_Position = (analogRead(Pot)*Degree_Per_Bit) - Pot_Offset;
-  //if the location is below 0 ie between true 0 and pit offset
-  //this statment correct for that
-  if(Pot_Position > 180)
-  {
-    Pot_Position = Pot_Position - 360;
-  }
   //used to take a rolling avrage for the position output
   Anguler_Count[count] = Pot_Position;
   count++;
@@ -744,6 +793,12 @@ void Mary_Jane(void)
     sum += Anguler_Count[i];
   }
   Pot_Position = sum/10;
+  //if the location is below 0 ie between true 0 and pit offset
+  //this statment correct for that
+  if(Pot_Position > 180)
+  {
+    Pot_Position = Pot_Position - 360;
+  }
   //velocity is more complecated
   //to take an avrage the change in velocity over the anguler_count needs to be taken
   if(count < 9 && count > 0)
