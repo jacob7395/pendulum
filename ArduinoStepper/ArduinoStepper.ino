@@ -23,7 +23,7 @@ Disclaimer i'm dyslexic and there is no spell check
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
 #define NUMBER_OF_BYTES 5
 //M/sec
-#define MAX_SPEED 0.9
+#define MAX_SPEED 1
 //first stage the program will enter after inital setup
 #define INITAL_MODE 6
 
@@ -142,7 +142,7 @@ float error = 0;
 float encoderAngle = 0;
 
 // create the PID controller
-PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 100, 1, DIRECT); //tuning
+PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 65, 2, DIRECT); //tuning
 //***********************************************************************//
 void setup() {
 
@@ -390,11 +390,11 @@ void loop() {
       encoderAngle = Pot_Position;
       interrupts();
 
-      if(Step_Count > 5)
+      if(Step_Count > 10)
       {
-        pidSetpoint = 1;
+        pidSetpoint =  1.5;
       }
-      else if(Step_Count < -5)
+      else if(Step_Count < -10)
       {
         pidSetpoint = -1;
       }
@@ -402,11 +402,11 @@ void loop() {
       //difference from desiredAngle, doesn't account for desired angles other than 0
       if(Pot_Position > 0)
       {
-        error = encoderAngle - 180 - 0.5;
+        error = encoderAngle - 180 - 1;
       }
       else if(Pot_Position < 0)
       {
-        error = 180 + encoderAngle + 0.5;
+        error = 180 + encoderAngle + 1;
       }
       
       //do the PID stuff
@@ -414,7 +414,7 @@ void loop() {
       myPID.Compute();
 
       // if the pendulum is too far off of vertical to recover, turn off the PID and motor
-      if (error > 45 || error < -45) {
+      if (error > 24 || error < -25) {
         myPID.SetMode(MANUAL);
         pidOutput = 0;
         Desired_Motor_Speed = 0;
