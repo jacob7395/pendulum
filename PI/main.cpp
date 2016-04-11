@@ -30,8 +30,9 @@
 #define PIN 3
 #define NUMBER_OF_BYTES 5
 
-unsigned char Packet[NUMBER_OF_BYTES];
-unsigned char buffer[NUMBER_OF_BYTES];
+char SPI_OUT   	[NUMBER_OF_BYTES];
+char SPI_BUFFER	[NUMBER_OF_BYTES];
+char SPI_IN 	[NUMBER_OF_BYTES];
 
 volatile int i;
 volatile unsigned int Angle;
@@ -48,21 +49,21 @@ volatile int PacketFault=0;
 
 void SPI_Req_ISR() {
 
-	Packet[0]=0x55;
-	Packet[1]=0xe8; // speed lo - 1000 pps
-	Packet[2]=0x03; // speed hi - 1000 pps
-	Packet[3]=0x00; // direction 0 = +ve
+	SPI_OUT[0]=0x55;	// Stat byte
+	SPI_OUT[1]=0xe8; // speed lo - 1000 pps
+	SPI_OUT[2]=0x03; // speed hi - 1000 pps
+	SPI_OUT[3]=0x00; // direction 0 = +ve
 
-	// form chksum
+	// form cheksum
 	for (i=0, Packet[NUMBER_OF_BYTES-1]=0; i<NUMBER_OF_BYTES-1; ++i)
 	{
-		Packet[NUMBER_OF_BYTES-1] += Packet[i];
+		SPI_OUT[NUMBER_OF_BYTES-1] += Packet[i];
     }
 
-	// copy to buffer for tx
+	//copy to buffer for tx
 	for (i=0; i<NUMBER_OF_BYTES; ++i)
 	{
-		buffer[i] = Packet[i];
+		SPI_BUFFER[i] = SPI_OUT[i];
     }
 
 	// tx 1 byte as a time as SPI master
@@ -72,33 +73,43 @@ void SPI_Req_ISR() {
 		TicksNow=micros();
 		while ((micros()-TicksNow)<25);
 	}
+	//copy to SPI_IN for SPI_BUFFER(now contains data from arduino)
+	for (i=0; i<NUMBER_OF_BYTES; ++i)
+	{
+		SPI_IN[i] = SPI_BUFFER[i];
+    }
+	//coung the number of packets recived
 	++Packets;
-
+	//check for start byte
 	if (buffer[0]==0x55)
 	{
 		chksum = 0;
+		//form the checksum for the resived data
 		for (i=0; i<NUMBER_OF_BYTES-1; ++i)
 		{
-			chksum += buffer[i];
+			chksum += SPI_IN[i];
         }
+        //if checksum is correct print the spi data
 		if (chksum==buffer[NUMBER_OF_BYTES])
 		{
-            printf("%02x\n", buffer[0]);
-            printf("%02x\n", buffer[1]);
-            printf("%02x\n", buffer[2]);
-            printf("%02x\n", buffer[3]);
-            printf("%02x\n", buffer[4]);
-            printf(" \n", buffer[4]);
+            printf("%02x\n", SPI_IN[0]);
+            printf("%02x\n", SPI_IN[1]);
+            printf("%02x\n", SPI_IN[2]);
+            printf("%02x\n", SPI_IN[3]);
+            printf("%02x\n", SPI_IN[4]);
+            printf(" \n",);
 		}
+		//else print data anc a error code
 		else
 		{
 			ChksumErrorCount++;
-			for (i=0; i<12; ++i)
+			for (i=0; i<NUMBER_OF_BYTES-1; ++i)
 			{
 				printf("Checksum error %02x\n", buffer[i]);
             }
 		}
 	}
+	//if bad start bit print error
 	else
 	{
 		++BadSOM;
