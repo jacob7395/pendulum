@@ -21,11 +21,11 @@ Disclaimer i'm dyslexic and there is no spell check
 //timeout in mS for a full packet (SPI data frame) to be received
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
-#define NUMBER_OF_BYTES 5
+#define NUMBER_OF_BYTES 10
 //M/sec
 #define MAX_SPEED 1
 //first stage the program will enter after inital setup
-#define INITAL_MODE 6
+#define INITAL_MODE 0
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -41,7 +41,7 @@ void Hall_Four_Hit   (void);
 void Hall_Five_Hit   (void);
 //SPI
 unsigned char GetByteFromSPI(void);
-void SPI_Manager(void);
+void SPI_Manager(char opperation);
 //pot managment
 void Mary_Jane(void);
 
@@ -67,8 +67,8 @@ float     Pot_Position   = 0;
 float     Pot_Velocity   = 0;
 float     Pot_Offset     = 62.9;
 
-bool Direction = 1;
-int Step_Count = 0;
+bool  Direction = 1;
+short Step_Count = 0;
 
 bool Timer1_State = 0;
 
@@ -120,8 +120,8 @@ float s = 0.1;
 int PPS = 0;
 //---------------------------------------------------------------//
 // SPI input and output arrays
-unsigned char SPI_in [NUMBER_OF_BYTES]; // holds incoming data from Pi
-unsigned char SPI_out[NUMBER_OF_BYTES]; // holds outgoing SPI data 
+unsigned char SPI_IN [NUMBER_OF_BYTES]; // holds incoming data from Pi
+unsigned char SPI_OUT[NUMBER_OF_BYTES]; // holds outgoing SPI data 
                                                                      
 unsigned int BytesRx;    // count of bytes rx on SPI     
 
@@ -131,6 +131,8 @@ bool Ready_For_Data = false;
 
 unsigned long timestamp1 = 0;
 unsigned long timestamp2 = 0;
+
+short Current_Mode = 0;
 //---------------------------------------------------------------//
 // PID varibles
 double pidSetpoint, pidInput, pidOutput;
@@ -142,7 +144,7 @@ float error = 0;
 float encoderAngle = 0;
 
 // create the PID controller
-PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 65, 2, DIRECT); //tuning
+PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 100, 1, DIRECT); //tuning
 //***********************************************************************//
 void setup() {
 
@@ -155,8 +157,8 @@ void setup() {
   //set SPI_IN/OUT to 0
   for (int j=0; j<NUMBER_OF_BYTES-1; ++j) 
   {
-    SPI_in[j]=0;
-    SPI_out[j]=0;
+    SPI_IN[j]=0;
+    SPI_OUT[j]=0;
   }
   
   // initialise port pin that tells the Pi SPI data available
@@ -184,14 +186,11 @@ void setup() {
   Serial.print("SPI0_MR ")  ; Serial.println(REG_SPI0_MR  , HEX); 
   Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
   Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
-  //set up inital SPI_out data
-  SPI_out[0] = 0x55;
-  SPI_out[1] = 0x01;
-  SPI_out[2] = 0x02;
-  SPI_out[3] = 0x03;
-  //Timer 3 starts the SPI data transfer
-  delay(100);
-  //Timer3.attachInterrupt(SPI_Manager).setFrequency(1000).start();
+  //set up inital SPI_OUT data
+  SPI_OUT[0] = 0x55;
+  SPI_OUT[1] = 0x01;
+  SPI_OUT[2] = 0x02;
+  SPI_OUT[3] = 0x03;
 
   //--------------------------------------------------------------------//
   //Motor and sensor setup
@@ -266,13 +265,21 @@ void loop() {
   {
     switch(Mode) {
     
-    case 0: //case to stop the cart and test code
+    case 0: //case used under normal opperation
       Config_Mode = false;
-      Serial.print((analogRead(Pot)*Degree_Per_Bit) - Pot_Offset);
-      Serial.print("    ");
-      Serial.println(Pot_Position);
+      static unsigned long Old_Time = 0;
+
+      while((millis()-Old_Time) < 10)
+      {
+        
+      };
+      SPI_Manager(0);
+      Old_Time = millis();
       
-      delay(100);
+      Desired_Motor_Speed = 0;
+      //code normaly commented out for safe serial prints
+      // Serial.println(Step_Count & 0x00ff);
+      //delay(10);//small delay to ensure coms is not too fast
     break;
     //this case uses a config opperation
     //it current travels slowly left towards hall 1
@@ -307,28 +314,11 @@ void loop() {
     break;
     //state to contorl stander communication operations
     case 2:
-      //setup the standerd SPI_out data in normal conditions
-      //the first byte will reperesnt the position
-      //data gatherd from case 1 allows accuret possisoning of each hall sensor
-      if(Step_Count <= -1166 && Step_Count > -1379)
-      {
-        SPI_out[1] = 0x01;
-      }
-      else if(Step_Count <= 1169 && Step_Count > -1166)
-      {
-        SPI_out[1] = 0x02;
-      }
-      else if(Step_Count <= 1398 && Step_Count > 1169)
-      {
-        SPI_out[1] = 0x03;
-      }
 
-      SPI_Manager();
-      Ready_For_Data = false;
-      Mode = 0;  
     break;
     //case position the cart in the middle of the track and stop
     case 3:
+      //suspend spi transfer
       digitalWrite(LED_Green, LOW);
       noInterrupts();
       //if step count is greater than 2 move towards the middle
@@ -347,6 +337,7 @@ void loop() {
         Desired_Motor_Speed = 0;
         digitalWrite(LED_Green, HIGH);
         Mode = INITAL_MODE;
+        //suspend spi transfer
       }
       interrupts();
       delay(10);
@@ -392,7 +383,7 @@ void loop() {
 
       if(Step_Count > 10)
       {
-        pidSetpoint =  1.5;
+        pidSetpoint = 1;
       }
       else if(Step_Count < -10)
       {
@@ -402,11 +393,11 @@ void loop() {
       //difference from desiredAngle, doesn't account for desired angles other than 0
       if(Pot_Position > 0)
       {
-        error = encoderAngle - 180 - 1;
+        error = encoderAngle - 180 - 0.5;
       }
       else if(Pot_Position < 0)
       {
-        error = 180 + encoderAngle + 1;
+        error = 180 + encoderAngle + 0.5;
       }
       
       //do the PID stuff
@@ -414,7 +405,7 @@ void loop() {
       myPID.Compute();
 
       // if the pendulum is too far off of vertical to recover, turn off the PID and motor
-      if (error > 24 || error < -25) {
+      if (error > 45 || error < -45) {
         myPID.SetMode(MANUAL);
         pidOutput = 0;
         Desired_Motor_Speed = 0;
@@ -609,6 +600,7 @@ void Hall_One_Hit   (void)
     if(Config_Mode == false)
     {
       Step_Count = Hall_One_Position;
+      Desired_Motor_Speed = 0; //this will stop the cart while it waits to get to mode 3
       Mode = 3; //mode to return cart to the middle of the track
     }
     else
@@ -664,6 +656,7 @@ void Hall_Five_Hit  (void)
     if(Config_Mode == false)
     {
       Step_Count = Hall_Five_Position;
+      Desired_Motor_Speed = 0; //this will stop the cart while it waits to get to mode 3
       Mode = 3; //mode to return cart to the middle of the track
     }
     else
@@ -701,13 +694,32 @@ unsigned char GetByteFromSPI(void)
 }
 
 //
-void SPI_Manager(void) 
+void SPI_Manager(char opperatoin) 
 { 
-  //make the checksum nad clear old SPI_in data
-  SPI_out[NUMBER_OF_BYTES - 1] = 0;
+  noInterrupts();
+  switch (opperatoin) 
+  {
+    //standerd case where normal data is transmited
+    case 0:
+      //setup the standerd SPI_OUT data in normal conditions
+      //the first 2 bytes will be the step count
+      //the count needs to be cut in half then recontructed on the other side
+      SPI_OUT[0] =  0x55; // standerd opperation start byte
+      
+      SPI_OUT[1] =  Step_Count       & 0x00ff;
+      SPI_OUT[2] = (Step_Count >> 8) & 0x00ff;
+
+      SPI_OUT[3] =  short(Pot_Position*100)     & 0xff;
+      SPI_OUT[4] = (short(Pot_Position*100)>>8) & 0xff;
+    break;
+  }
+  interrupts();
+
+  //make the checksum nad clear old SPI_IN data
+  SPI_OUT[NUMBER_OF_BYTES - 1] = 0;
   for (int i = 0; i < NUMBER_OF_BYTES - 1; i++) {
-    SPI_in[i] = 0;
-    SPI_out[NUMBER_OF_BYTES - 1] += SPI_out[i];
+    SPI_IN[i] = 0;
+    SPI_OUT[NUMBER_OF_BYTES - 1] += SPI_OUT[i];
   } 
   //reading the SPI register clears the flag
   //the register is a read only so this is the only way to clear it
@@ -715,7 +727,7 @@ void SPI_Manager(void)
 
   //load TDR with the first byte to be ready for tx when Pi trasmits
   BytesRx = 0;
-  REG_SPI0_TDR = SPI_out[BytesRx] & 0x0ff;; // load outgoing register 
+  REG_SPI0_TDR = SPI_OUT[BytesRx] & 0x0ff;; // load outgoing register 
   
   //request SPI transfer from Pi SPI master
   //this way of changing the pins is fater than digitalWrite()
@@ -727,17 +739,17 @@ void SPI_Manager(void)
   
   //each 8-bit SPI transfer should take 16uS with 500000Hz clock
   //the 1st byte from Pi will arrive immediately, then at 50uS intervals
-  SPI_in[BytesRx]=GetByteFromSPI(); // get 1st byte
+  SPI_IN[BytesRx]=GetByteFromSPI(); // get 1st byte
   //if the fist byte is the start byte as expected procide with the data transfer
-  if (SPI_in[0]==0x55) 
+  if (SPI_IN[0]==0x55) 
   {
     do
     {
       BytesRx++;
 
-      REG_SPI0_TDR = SPI_out[BytesRx] & 0x0ff; // load outgoing register 
+      REG_SPI0_TDR = SPI_OUT[BytesRx] & 0x0ff; // load outgoing register 
       
-      SPI_in[BytesRx] = GetByteFromSPI();
+      SPI_IN[BytesRx] = GetByteFromSPI();
       
     } while(BytesRx < (NUMBER_OF_BYTES-1))  ;  
   }
@@ -747,7 +759,7 @@ void SPI_Manager(void)
   else 
   {
     //message to userial
-    Serial.print("No start byte resived");
+    Serial.println("No start byte resived");
     //reset the SPI registers to recover from fault
     REG_SPI0_WPMR = 0x53504900;   // Write Protection disable
     REG_SPI0_CR  = SPI_CR_SWRST;  // reset SPI (0x0080)
@@ -755,15 +767,6 @@ void SPI_Manager(void)
     REG_SPI0_MR  = SPI_MR_MODFDIS;// slave and no mode fault (0x0010)
     REG_SPI0_CSR = SPI_MODE0;     // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
     REG_SPI0_IDR = 0X0000070F;    // disable all SPI interrupts
-  }
-}
-
-void SPI_Timer(void)
-{
-  if(Ready_For_Data == true)
-  {
-    Ready_For_Data = false;
-    Mode = 2;
   }
 }
 //***********************************************************************//
