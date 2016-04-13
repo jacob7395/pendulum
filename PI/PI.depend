@@ -1,0 +1,19 @@
+# depslib dependency file v1.0
+1460549321 source:/root/Desktop/pendulum/PI/main.cpp
+	<stdio.h>
+	<string.h>
+	<wiringPi.h>
+	<wiringPiSPI.h>
+	<time.h>
+	<sys/time.h>
+	"SPI.h"
+
+1460546782 /root/Desktop/pendulum/PI/SPI.h
+	<stdio.h>
+	<string.h>
+	<wiringPi.h>
+	<wiringPiSPI.h>
+
+1460546991 source:/root/Desktop/pendulum/PI/SPI.cpp
+	"SPI.h"
+
