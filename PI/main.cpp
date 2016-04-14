@@ -26,10 +26,9 @@
 #include <string.h>
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
-#include <time.h>
-#include <sys/time.h>
 
 #include "SPI.h"
+#include "File.h"
 
 int main(int argc, char **argv)
 {
@@ -62,21 +61,6 @@ int main(int argc, char **argv)
 	pinMode			(0, INPUT);
 	pullUpDnControl (0, PUD_UP);
 	wiringPiISR		(0, INT_EDGE_FALLING, SPI_Req_ISR);
-
-
-    //TEST OF FILE MANAGMET WITH TIM
-    char file_name[200] = "/root/Desktop/pendulum/PI/Data/";
-
-	timeval curTime;
-	tm *my_date_time;
-	gettimeofday(&curTime, NULL);
-	my_date_time = localtime(&curTime.tv_sec);
-
-    strftime(TimeString, 80, "%Y-%m-%d %H:%M:%S", my_date_time);
-
-    printf("%s \n",TimeString);
-
-    FILE *fp = fopen("/root/Desktop/pendulum/PI/Data/test.txt", "w+");
 
     printf("hello wiringPi\n");
 
