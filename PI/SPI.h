@@ -14,4 +14,4 @@ Contaions SPI interups funtion
 
 //functoins
 void SPI_Req_ISR(void);
-void SPI_Init(char *SPI_OUT, char *SPI_IN);
+void SPI_Init(char *SPI_OUT, char *SPI_IN, bool *Packet_Flag);
