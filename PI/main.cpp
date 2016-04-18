@@ -75,26 +75,27 @@ int main(int argc, char **argv)
         strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
 
         while(!Packet_Ready)
-        {
-        };
-
+        {};
+        //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
         strncpy(SPI_IN_TEMP , SPI_IN , NUMBER_OF_BYTES);
         strncpy(SPI_OUT_TEMP, SPI_OUT, NUMBER_OF_BYTES);
+        //reset the packet flag
         Packet_Ready = false;
-
+        //merge the income bytes into a single float
         Step_Count = 0;
         Step_Count = Step_Count |  SPI_IN_TEMP[1];
         Step_Count = Step_Count | (SPI_IN_TEMP[2]<<8);
+        //merge the incoming bytes into one float
         Pendelum_Angle_temp = 0;
         Pendelum_Angle_temp = Pendelum_Angle_temp |  SPI_IN_TEMP[3];
         Pendelum_Angle_temp = Pendelum_Angle_temp | (SPI_IN_TEMP[4]<<8);
 
         Pendelum_Angle = float(Pendelum_Angle_temp)/100;
 
-        cout << Int_To_String(Pendelum_Angle,2) << '\n';
+        //std::cout << Int_To_String(Pendelum_Angle,2) << '\n';
+        //std::cout << Int_To_String(Step_Count,0) << '\n';
 
-        // printf("%03f\n"  , Pendelum_Angle);
-        // printf("%02i\n\n", Step_Count);
+        Record_Data(Int_To_String(Pendelum_Angle,2) + ' ' + Int_To_String(Step_Count,0));
     }
 
 	return 0;

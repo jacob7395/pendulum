@@ -34,8 +34,6 @@
 		</Compiler>
 		<Unit filename="File.cpp" />
 		<Unit filename="File.h" />
-		<Unit filename="SPI.cpp" />
-		<Unit filename="SPI.h" />
 		<Unit filename="main.cpp" />
 		<Extensions>
 			<code_completion />
