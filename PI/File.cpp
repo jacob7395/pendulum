@@ -72,11 +72,20 @@ void New_Run(void)
     outFile.open(File_Path_Array);
 }
 
-string Int_To_String(int num)
+string Int_To_String(float fNum, int Decimal)
 {
     string S;
+    int num;
 
-    while(num > 0)
+    if(num < 0)
+    {
+        S = '-';
+        num *= -1;
+    }
+    //gets the wanted decimals to above the decimal place
+    num = fNum * (10^Decimal);
+
+    while(num > ((10^Decimal)-1))
     {
         switch(num % 10)
         {
@@ -112,6 +121,48 @@ string Int_To_String(int num)
             break;
         }
         num /= 10;
+    }
+
+    if(Decimal > 0)
+    {   
+        S = '.' + S;
+        while(0)
+        {
+            switch(num % 10)
+            {
+                case 0:
+                    S = ('0' + S);
+                break;
+                case 1:
+                    S = ('1' + S);
+                break;
+                case 2:
+                    S = ('2' + S);
+                break;
+                case 3:
+                    S = ('3' + S);
+                break;
+                case 4:
+                    S = ('4' + S);
+                break;
+                case 5:
+                    S = ('5' + S);
+                break;
+                case 6:
+                    S = ('6' + S);
+                break;
+                case 7:
+                    S = ('7' + S);
+                break;
+                case 8:
+                    S = ('8' + S);
+                break;
+                case 9:
+                    S = ('9' + S);
+                break;
+            }
+            num /= 10;
+        }
     }
     return S;
 }

@@ -15,5 +15,6 @@ Contaions file managment functions
 
 void File_Init(void);
 void New_Run(void);
-std::string Int_To_String(int num);
+void Record_Data(string data);
+string Int_To_String(float num, int Decimal);
 

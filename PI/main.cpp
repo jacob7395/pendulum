@@ -91,8 +91,10 @@ int main(int argc, char **argv)
 
         Pendelum_Angle = float(Pendelum_Angle_temp)/100;
 
-        printf("%03f\n"  , Pendelum_Angle);
-        printf("%02i\n\n", Step_Count);
+        cout << Int_To_String(Pendelum_Angle,2) << '\n';
+
+        // printf("%03f\n"  , Pendelum_Angle);
+        // printf("%02i\n\n", Step_Count);
     }
 
 	return 0;
