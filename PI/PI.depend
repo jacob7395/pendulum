@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1461171410 source:/root/Desktop/pendulum/PI/main.cpp
+1461189689 source:/root/Desktop/pendulum/PI/main.cpp
 	<stdio.h>
 	<string.h>
 	<wiringPi.h>
@@ -15,10 +15,10 @@
 1460717867 source:/root/Desktop/pendulum/PI/SPI.cpp
 	"SPI.h"
 
-1461171670 source:/root/Desktop/pendulum/PI/File.cpp
+1461176578 source:/root/Desktop/pendulum/PI/File.cpp
 	"File.h"
 
-1460990569 /root/Desktop/pendulum/PI/File.h
+1461175003 /root/Desktop/pendulum/PI/File.h
 	<time.h>
 	<sys/time.h>
 	<stdio.h>
@@ -27,4 +27,7 @@
 	<fstream>
 	<sstream>
 	<math.h>
+	<sys/types.h>
+	<sys/stat.h>
+	<unistd.h>
 
