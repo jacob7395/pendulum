@@ -15,6 +15,7 @@ string File_Path;
 
 void File_Init(void)
 {
+    iRun_Count = 1;
     //close any existing file
     outFile.close();
 
@@ -25,7 +26,7 @@ void File_Init(void)
 	gettimeofday(&curTime, NULL);
 	my_date_time = localtime(&curTime.tv_sec);
 
-    strftime(TimeString, 80, "%Y-%m-%d", my_date_time);
+    strftime(TimeString, 80, "%Y-%m-%d-%H:%M:%S", my_date_time);
 
     File_Path = (Folder_Path + TimeString + "_RunCount-"+Int_To_String(iRun_Count,0));
     iRun_Count++;

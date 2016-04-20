@@ -61,19 +61,19 @@ int main(int argc, char **argv)
 
 	wiringPiSetup();
 
-	wiringPiSPISetup(0, 3000000);
+	wiringPiSPISetup(0, 500000);
 
 	pinMode			(0, INPUT);
 	pullUpDnControl (0, PUD_UP);
     wiringPiISR		(0, INT_EDGE_FALLING, SPI_Req_ISR);
     //create a file with the current time as a name
     File_Init();
-    
+
     printf("hello wiringPi\n");
 
 	while(1)
 	{
-        switch(mode)
+        switch(Mode)
         {
             //normal operational mode for velocity control
             case 0:
@@ -113,11 +113,12 @@ int main(int argc, char **argv)
                 switch(SPI_IN_TEMP[1])
                 {
                     //sent on ardino bootup
-                    case[0x71]:
+                    case 0x71:
                     File_Init();
                     break;
                     //sent when arduino colides with a limit switch
-                    case[0x72]:
+                    //0x72 in decimal
+                    case 0x72:
                     New_Run();
                     break;
                 }
@@ -125,8 +126,8 @@ int main(int argc, char **argv)
                 strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
                 while(!Packet_Ready)
                 {};
-            break 
-        }   
+            break;
+        }
     }
 
 	return 0;
@@ -188,7 +189,11 @@ void SPI_Req_ISR(void) {
 		if (chksum == SPI_BUFFER[NUMBER_OF_BYTES-1])
 		{
 			ChksumErrorCount++;
-			Record_Data("Checksum Error Count - " + ChksumErrorCount);
+			printf("Checksum Error Count - %i\n", ChksumErrorCount);
+			for(int i = 0; i < NUMBER_OF_BYTES; i++)
+			{
+                printf("%x %x\n", SPI_IN[i], SPI_OUT[i]);
+			}
             //may insuret a error reset meaning if chkerror is more then 10 in 1 run reset run and log fail
             Packet_Ready = FALSE;
             return;
@@ -197,11 +202,11 @@ void SPI_Req_ISR(void) {
         {
             //normal message use normal mode
             case 0x55:
-                mode = 0;
+                Mode = 0;
             break;
             //error message resived use error mode
             case 0x46:
-                mode = 1;
+                Mode = 1;
             break;
         }
 	}
