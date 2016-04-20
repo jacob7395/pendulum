@@ -51,6 +51,7 @@ int main(int argc, char **argv)
     short Step_Count           = 0;
     float Current_Motor_Speed  = 0;
     float Pendelum_Angle       = 0;
+    float Pendelum_Velocity    = 0;
 
     for(int i = 0; i<NUMBER_OF_BYTES; i++)
     {
