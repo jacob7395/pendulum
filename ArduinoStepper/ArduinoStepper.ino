@@ -128,6 +128,8 @@ unsigned int BytesRx;    // count of bytes rx on SPI
 int SensorDataAvailablePin = 49; // tells Pi that sensor data is ready for SPI transfer
 
 bool Ready_For_Data = false;
+//the speed taken form SPI coms
+float SPI_Speed = 0;
 
 unsigned long timestamp1 = 0;
 unsigned long timestamp2 = 0;
@@ -171,10 +173,10 @@ void setup() {
 
   //Sets up the SPI regesters and enables the arduino as a salve
   //it also preints the content of key registers befor and after setting them
-  //this is not needed to make it work but gives some debug info
-  Serial.print("SPI0_MR "  ); Serial.println(REG_SPI0_MR  , HEX); 
-  Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
-  Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
+  // //this is not needed to make it work but gives some debug info
+  // Serial.print("SPI0_MR "  ); Serial.println(REG_SPI0_MR  , HEX); 
+  // Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
+  // Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
 
   REG_SPI0_WPMR = 0x53504900    ; // Write Protection disable
   REG_SPI0_CR   = SPI_CR_SWRST  ; // reset  SPI (0x0080)
@@ -183,9 +185,9 @@ void setup() {
   REG_SPI0_CSR  = SPI_MODE0     ; // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
   REG_SPI0_IDR  = 0X0000070F    ; // disable all SPI interrupts
 
-  Serial.print("SPI0_MR ")  ; Serial.println(REG_SPI0_MR  , HEX); 
-  Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
-  Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
+  // Serial.print("SPI0_MR ")  ; Serial.println(REG_SPI0_MR  , HEX); 
+  // Serial.print("SPI0_CSR " ); Serial.println(REG_SPI0_CSR , HEX); 
+  // Serial.print("SPI0_WPMR "); Serial.println(REG_SPI0_WPMR, HEX);
   //set up inital SPI_OUT data
   SPI_OUT[0] = 0x55;
   SPI_OUT[1] = 0x01;
@@ -251,8 +253,9 @@ void setup() {
   pidInput = error;
   for (int i=0; i<5; ++i) {
     myPID.Compute();
-    delay(500);
+    delay(100);
   }
+  SPI_Manager(1);
 }
 //***********************************************************************//
 void loop() {
@@ -276,7 +279,7 @@ void loop() {
       SPI_Manager(0);
       Old_Time = millis();
       
-      Desired_Motor_Speed = 0;
+      Desired_Motor_Speed = 0.3;
       //code normaly commented out for safe serial prints
       // Serial.println(Step_Count & 0x00ff);
       //delay(10);//small delay to ensure coms is not too fast
@@ -335,6 +338,7 @@ void loop() {
       {
         interrupts();
         Desired_Motor_Speed = 0;
+        SPI_Manager(2); //tell the PI a colition has occured
         digitalWrite(LED_Green, HIGH);
         Mode = INITAL_MODE;
         //suspend spi transfer
@@ -530,6 +534,8 @@ void Set_Motor_Speed(void)
     g_APinDescription[Pulse].pPort -> PIO_CODR = g_APinDescription[Pulse].ulPin;
     digitalWrite(LED_Blue,LOW);
   }
+  //update the current motor speed using the current frequency
+  Current_Motor_Speed = (((Current_Frequency/2)/Distance_Per_Step)/Step_Res);
   //---------------------------------------------------------------//
 }
 //***********************************************************************//
@@ -545,6 +551,7 @@ void Step(void) {
   static bool state = 0;
   if (state == 0)
   {
+    //set pin high
     g_APinDescription[Pulse].pPort -> PIO_SODR = g_APinDescription[Pulse].ulPin;
     state = 1;
     if (Direction == 1)
@@ -558,6 +565,7 @@ void Step(void) {
   }
   else if (state == 1)
   {
+    //set pin low
     g_APinDescription[Pulse].pPort -> PIO_CODR = g_APinDescription[Pulse].ulPin;
     state = 0;
   }
@@ -709,8 +717,28 @@ void SPI_Manager(char opperatoin)
       SPI_OUT[1] =  Step_Count       & 0x00ff;
       SPI_OUT[2] = (Step_Count >> 8) & 0x00ff;
 
-      SPI_OUT[3] =  short(Pot_Position*100)     & 0xff;
-      SPI_OUT[4] = (short(Pot_Position*100)>>8) & 0xff;
+      SPI_OUT[3] =  short(Current_Motor_Speed*100)     & 0xff;
+      SPI_OUT[4] = (short(Current_Motor_Speed*100)>>8) & 0xff;
+
+      SPI_OUT[5] =  short(Pot_Position*100)     & 0xff;
+      SPI_OUT[6] = (short(Pot_Position*100)>>8) & 0xff;
+
+      SPI_OUT[7] =  short(Pot_Velocity*100)     & 0xff;
+      SPI_OUT[8] = (short(Pot_Velocity*100)>>8) & 0xff;
+    break;
+    //Run on arduino bootup
+    case 1:
+      //indicatte 
+      SPI_OUT[0] = 0x46;
+
+      SPI_OUT[1] = 0x71;
+    break;
+    //tell PI a collision witht he limits has been made
+    case 2:
+      //indicatte 
+      SPI_OUT[0] = 0x46;
+
+      SPI_OUT[1] = 0x72;
     break;
   }
   interrupts();
@@ -751,7 +779,12 @@ void SPI_Manager(char opperatoin)
       
       SPI_IN[BytesRx] = GetByteFromSPI();
       
-    } while(BytesRx < (NUMBER_OF_BYTES-1))  ;  
+    } while(BytesRx < (NUMBER_OF_BYTES-1));
+    if(SPI_IN[0] == 0x55)
+    {
+      SPI_Speed = SPI_IN[1] | (SPI_IN[2]<<8);
+      SPI_Speed /= 100;
+    } 
   }
   //if start but was not resived in the first byte data is wrong
   //print message to the serial informing user bad transfer then reset the SPI register as in setup
