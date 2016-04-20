@@ -38,6 +38,8 @@ char SPI_OUT[NUMBER_OF_BYTES];
 char SPI_IN [NUMBER_OF_BYTES];
 
 bool Packet_Ready = false;
+//definces modes of opperation where 0 is the standerd operation mode
+int Mode = 0;
 
 int main(int argc, char **argv)
 {
@@ -47,7 +49,7 @@ int main(int argc, char **argv)
     char SPI_IN_TEMP [NUMBER_OF_BYTES];
 
     short Step_Count           = 0;
-    short Pendelum_Angle_temp  = 0;
+    float Current_Motor_Speed  = 0;
     float Pendelum_Angle       = 0;
 
     for(int i = 0; i<NUMBER_OF_BYTES; i++)
@@ -65,37 +67,65 @@ int main(int argc, char **argv)
     wiringPiISR		(0, INT_EDGE_FALLING, SPI_Req_ISR);
     //create a file with the current time as a name
     File_Init();
-    New_Run();
-
+    
     printf("hello wiringPi\n");
 
 	while(1)
 	{
-        //copy the latest SPI_OUT data for transmision to the interupt
-        strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
+        switch(mode)
+        {
+            //normal operational mode for velocity control
+            case 0:
+            //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
+            strncpy(SPI_IN_TEMP , SPI_IN , NUMBER_OF_BYTES);
+            strncpy(SPI_OUT_TEMP, SPI_OUT, NUMBER_OF_BYTES);
+            //reset the packet flag
+            Packet_Ready = false;
+            //merge the income bytes into a single float
+            Step_Count = 0;
+            Step_Count = SPI_IN_TEMP[1] | (SPI_IN_TEMP[2]<<8);
+            //merge the incoming bytes into one float
+            Current_Motor_Speed = 0;
+            Current_Motor_Speed = float(SPI_IN_TEMP[3] | (SPI_IN_TEMP[4]<<8))/100;
+            //merge the incoming bytes into one float
+            Pendelum_Angle      = 0;
+            Pendelum_Angle      = float(SPI_IN_TEMP[5] | (SPI_IN_TEMP[6]<<8))/100;
+            //merge the incoming bytes into one float
+            Pendelum_Velocity   = 0;
+            Pendelum_Velocity   = float(SPI_IN_TEMP[7] | (SPI_IN_TEMP[8]<<8))/100;
+            //record the date from the pie in the oreder the data is resived
+            Record_Data(Int_To_String(Step_Count,0) + ' ' + Int_To_String(Current_Motor_Speed,2) + ' ' + Int_To_String(Pendelum_Angle,2) + ' ' + Int_To_String(Pendelum_Velocity,2));
 
-        while(!Packet_Ready)
-        {};
-        //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
-        strncpy(SPI_IN_TEMP , SPI_IN , NUMBER_OF_BYTES);
-        strncpy(SPI_OUT_TEMP, SPI_OUT, NUMBER_OF_BYTES);
-        //reset the packet flag
-        Packet_Ready = false;
-        //merge the income bytes into a single float
-        Step_Count = 0;
-        Step_Count = Step_Count |  SPI_IN_TEMP[1];
-        Step_Count = Step_Count | (SPI_IN_TEMP[2]<<8);
-        //merge the incoming bytes into one float
-        Pendelum_Angle_temp = 0;
-        Pendelum_Angle_temp = Pendelum_Angle_temp |  SPI_IN_TEMP[3];
-        Pendelum_Angle_temp = Pendelum_Angle_temp | (SPI_IN_TEMP[4]<<8);
-
-        Pendelum_Angle = float(Pendelum_Angle_temp)/100;
-
-        //std::cout << Int_To_String(Pendelum_Angle,2) << '\n';
-        //std::cout << Int_To_String(Step_Count,0) << '\n';
-
-        Record_Data(Int_To_String(Pendelum_Angle,2) + ' ' + Int_To_String(Step_Count,0));
+            //copy the latest SPI_OUT data for transmision to the interupt
+            strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
+            //wait for a new packed
+            while(!Packet_Ready)
+            {};
+            break;
+            //mode to poroccess error messages
+            case 1:
+                //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
+                strncpy(SPI_IN_TEMP , SPI_IN , NUMBER_OF_BYTES);
+                strncpy(SPI_OUT_TEMP, SPI_OUT, NUMBER_OF_BYTES);
+                //reset ready flag
+                Packet_Ready = FALSE;
+                switch(SPI_IN_TEMP[1])
+                {
+                    //sent on ardino bootup
+                    case[0x71]:
+                    File_Init();
+                    break;
+                    //sent when arduino colides with a limit switch
+                    case[0x72]:
+                    New_Run();
+                    break;
+                }
+                //copy the latest SPI_OUT data for transmision to the interupt
+                strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
+                while(!Packet_Ready)
+                {};
+            break 
+        }   
     }
 
 	return 0;
@@ -114,7 +144,8 @@ void SPI_Req_ISR(void) {
 
     unsigned char SPI_BUFFER[NUMBER_OF_BYTES];
 
-	SPI_OUT[0]=0x55;	// Stat byte
+    //normal operation start byte
+	SPI_OUT[0] = 0x55;// Stat byte
 
 	// form cheksum
 	SPI_OUT[NUMBER_OF_BYTES-1]=0; //clear old checksum
@@ -144,7 +175,7 @@ void SPI_Req_ISR(void) {
 	//coung the number of packets recived
 	++Packets;
 	//check for start byte
-	if (SPI_BUFFER[0]==0x55)
+	if (SPI_BUFFER[0]==0x55 || SPI_BUFFER[0]==0x46)
 	{
 		chksum = 0;
 		//form the checksum for the resived data
@@ -152,30 +183,27 @@ void SPI_Req_ISR(void) {
 		{
 			chksum += SPI_IN[i];
         }
-        //if checksum is correct print the spi data
-/*		if (chksum == SPI_BUFFER[NUMBER_OF_BYTES-1])
-		{
-            printf("Packets recived %02i, Checksum errors %02i\n", Packets, ChksumErrorCount);
-            for (int i=0; i<NUMBER_OF_BYTES; ++i)
-			{
-                printf("%02x   ", SPI_OUT[i]);
-                printf("%02x\n" , SPI_IN [i]);
-            }
-            printf(" \n");
-		}
-		//else print data anc a error code
-		else
+        //if checksum is wrong log an error
+		if (chksum == SPI_BUFFER[NUMBER_OF_BYTES-1])
 		{
 			ChksumErrorCount++;
-			for (int i=0; i<NUMBER_OF_BYTES; ++i)
-			{
-                printf("%02x   ", SPI_OUT[i]);
-                printf("%02x \n", SPI_IN [i]);
-            }
-            printf("Checksum error %02x, %02i\n", chksum, ChksumErrorCount);
-            printf(" \n");
+			Record_Data("Checksum Error Count - " + ChksumErrorCount);
+            //may insuret a error reset meaning if chkerror is more then 10 in 1 run reset run and log fail
+            Packet_Ready = FALSE;
+            return;
 		}
-*/	}
+        switch(SPI_BUFFER[0])
+        {
+            //normal message use normal mode
+            case 0x55:
+                mode = 0;
+            break;
+            //error message resived use error mode
+            case 0x46:
+                mode = 1;
+            break;
+        }
+	}
 	//if bad start bit print error
 	else
 	{
