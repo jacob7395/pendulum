@@ -92,19 +92,20 @@ int main(int argc, char **argv)
             static short Speed_Temp = 0;
             Current_Motor_Speed = 0;
             Speed_Temp = SPI_IN_TEMP[3] | (SPI_IN_TEMP[4]<<8);
-            Current_Motor_Speed = (float)Speed_Temp;
+            Current_Motor_Speed = (float)Speed_Temp / 100;
             //merge the incoming bytes into one float
             static short Angle_Short = 0;
             Pendelum_Angle = 0;
             Angle_Short    = SPI_IN_TEMP[5] | (SPI_IN_TEMP[6]<<8);
-            Pendelum_Angle = (float)Angle_Short;
+            Pendelum_Angle = (float)Angle_Short / 100;
             //merge the incoming bytes into one float
             static short Velocity_Short = 0;
             Pendelum_Velocity  = 0;
             Velocity_Short     = SPI_IN_TEMP[7] | (SPI_IN_TEMP[8]<<8);
-            Pendelum_Velocity  = (float)Velocity_Short;
+            Pendelum_Velocity  = (float)Velocity_Short / 100;
             //record the date from the pie in the oreder the data is resived
-            Record_Data(Int_To_String(Step_Count,0) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2));
+            if(Step_Count != NULL && Speed_Temp != NULL && Angle_Short != NULL && Velocity_Short != NULL);
+                Record_Data(Int_To_String(Step_Count,0) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2));
             //area to calculate the desired speed
             static float Desired_Speed = 0.3;
 
@@ -117,17 +118,16 @@ int main(int argc, char **argv)
                 Desired_Speed = 0.5;
             }
 
-            SPI_OUT_TEMP[1] =  (short)(Desired_Speed * 100) & 0xff;
+            SPI_OUT_TEMP[1] =  (short)(Desired_Speed * 100)       & 0xff;
             SPI_OUT_TEMP[2] = ((short)(Desired_Speed * 100) >> 8) & 0xff;
             //copy the latest SPI_OUT data for transmision to the interupt
             for(int i = 0; i < NUMBER_OF_BYTES; i++)
 			{
                 SPI_OUT[i] = SPI_OUT_TEMP[i];
 			}
-			//wait for a new packed
-            while(!Packet_Ready)
-            {};
-
+			while(!Packet_Ready)
+			{};
+            printf("%i\n", Packet_Ready);
             break;
             //mode to poroccess error messages
             case 1:
@@ -138,7 +138,7 @@ int main(int argc, char **argv)
                     SPI_OUT_TEMP[i] = SPI_OUT[i];
                 }
                 //reset ready flag
-                Packet_Ready = FALSE;
+                Packet_Ready = false;
                 switch(SPI_IN_TEMP[1])
                 {
                     //sent on ardino bootup
@@ -179,9 +179,9 @@ void SPI_Req_ISR(void) {
 
     unsigned char SPI_BUFFER[NUMBER_OF_BYTES];
 
+    Packet_Ready = true;
     //normal operation start byte
 	SPI_OUT[0] = 0x55;// Stat byte
-
 	// form cheksum
 	SPI_OUT[NUMBER_OF_BYTES-1]=0; //clear old checksum
 	for(int i=0; i<NUMBER_OF_BYTES-1; ++i)
@@ -209,7 +209,6 @@ void SPI_Req_ISR(void) {
     }
 	//coung the number of packets recived
 	++Packets;
-	//check for start byte
 	if (SPI_BUFFER[0]==0x55 || SPI_BUFFER[0]==0x46)
 	{
 		chksum = 0;
@@ -230,7 +229,7 @@ void SPI_Req_ISR(void) {
 			}
 			printf("%x\n", chksum);
             //may insuret a error reset meaning if chkerror is more then 10 in 1 run reset run and log fail
-            Packet_Ready = FALSE;
+            Packet_Ready = false;
             return;
 		}
         switch(SPI_BUFFER[0])
@@ -250,10 +249,11 @@ void SPI_Req_ISR(void) {
 	{
 		++BadSOM;
 		printf("Bad SOM\n");
+
+		Packet_Ready = false;
+        return;
 	}
-
 	Packet_Ready = true;
-
 	return;
 }
 

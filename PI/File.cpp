@@ -9,7 +9,7 @@ int iRun_Count = 1;
 ofstream outFile;
 
 char TimeString[128];
-string Folder_Path ("/root/Desktop/pendulum/PI/Data/");
+string Folder_Path ("/home/pi/Desktop/Data");
 //File path for the folder where data will be stored
 string File_Path;
 
@@ -29,6 +29,7 @@ void File_Init(void)
     strftime(TimeString, 80, "%Y-%m-%d-%H:%M:%S", my_date_time);
 
     File_Path = (Folder_Path + TimeString);
+    File_Path =  Folder_Path;
 
     for(int i = 0; i < File_Path.length(); i++)
     {
@@ -55,7 +56,6 @@ void File_Init(void)
     }
     //open filepath
     outFile.open(File_Path_Array_Two);
-    outFile.close();
     //print file path and incroment run count
     cout << File_Path << "\n";
     iRun_Count++;
@@ -69,7 +69,9 @@ void New_Run(void)
     File_Path =  "";
     //make new file path
     File_Path = (Folder_Path + TimeString + "/Run-"+Int_To_String(iRun_Count,0)+".csv");
+    File_Path = (Folder_Path + "/Run-"+Int_To_String(iRun_Count,0)+".csv");
     iRun_Count++;
+
 
     for(int i = 0; i < File_Path.length(); i++)
     {
