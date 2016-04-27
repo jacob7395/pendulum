@@ -279,7 +279,7 @@ void loop() {
       SPI_Manager(0);
       Old_Time = millis();
       
-      Desired_Motor_Speed = 0.3;
+      Desired_Motor_Speed = SPI_Speed;
       //code normaly commented out for safe serial prints
       // Serial.println(Step_Count & 0x00ff);
       //delay(10);//small delay to ensure coms is not too fast
@@ -338,8 +338,10 @@ void loop() {
       {
         interrupts();
         Desired_Motor_Speed = 0;
+        delay(10);
         SPI_Manager(2); //tell the PI a colition has occured
         digitalWrite(LED_Green, HIGH);
+        delay(100);
         Mode = INITAL_MODE;
         //suspend spi transfer
       }
@@ -717,14 +719,14 @@ void SPI_Manager(char opperatoin)
       SPI_OUT[1] =  Step_Count       & 0x00ff;
       SPI_OUT[2] = (Step_Count >> 8) & 0x00ff;
 
-      SPI_OUT[3] =  short(Current_Motor_Speed*100)     & 0xff;
-      SPI_OUT[4] = (short(Current_Motor_Speed*100)>>8) & 0xff;
+      SPI_OUT[3] =  (int16_t)(Current_Motor_Speed*100)     & 0xff;
+      SPI_OUT[4] = ((int16_t)(Current_Motor_Speed*100)>>8) & 0xff;
 
-      SPI_OUT[5] =  short(Pot_Position*100)     & 0xff;
-      SPI_OUT[6] = (short(Pot_Position*100)>>8) & 0xff;
+      SPI_OUT[5] =  (int16_t)(Pot_Position*100)     & 0xff;
+      SPI_OUT[6] = ((int16_t)(Pot_Position*100)>>8) & 0xff;
 
-      SPI_OUT[7] =  short(Pot_Velocity*100)     & 0xff;
-      SPI_OUT[8] = (short(Pot_Velocity*100)>>8) & 0xff;
+      SPI_OUT[7] =  (int16_t)(Pot_Velocity*100)     & 0xff;
+      SPI_OUT[8] = ((int16_t)(Pot_Velocity*100)>>8) & 0xff; 
     break;
     //Run on arduino bootup
     case 1:
@@ -782,8 +784,9 @@ void SPI_Manager(char opperatoin)
     } while(BytesRx < (NUMBER_OF_BYTES-1));
     if(SPI_IN[0] == 0x55)
     {
-      SPI_Speed = SPI_IN[1] | (SPI_IN[2]<<8);
-      SPI_Speed /= 100;
+      static int16_t SPI_Speed_Short = 0;
+      SPI_Speed_Short = SPI_IN[1] | (SPI_IN[2]<<8);
+      SPI_Speed = ((float)SPI_Speed_Short)/100;
     } 
   }
   //if start but was not resived in the first byte data is wrong
