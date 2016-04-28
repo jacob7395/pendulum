@@ -94,7 +94,8 @@ void New_Run(void)
 
 void Record_Data(std::string data)
 {
-    outFile << data << endl;
+    outFile << endl;
+    outFile << data;
 }
 
 string Int_To_String(float fNum, int Decimal)

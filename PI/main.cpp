@@ -30,16 +30,16 @@
 #include "File.h"
 
 #define PIN 3
-#define NUMBER_OF_BYTES 10
+#define NUMBER_OF_BYTES 14
 
 void SPI_Req_ISR(void);
 
-char SPI_OUT[NUMBER_OF_BYTES];
-char SPI_IN [NUMBER_OF_BYTES];
+volatile char SPI_OUT[NUMBER_OF_BYTES];
+volatile char SPI_IN [NUMBER_OF_BYTES];
 
-bool Packet_Ready = false;
+volatile bool Packet_Ready = false;
 //definces modes of opperation where 0 is the standerd operation mode
-int Mode = 0;
+volatile int Mode = 0;
 
 int main(int argc, char **argv)
 {
@@ -48,6 +48,7 @@ int main(int argc, char **argv)
     char SPI_OUT_TEMP[NUMBER_OF_BYTES];
     char SPI_IN_TEMP [NUMBER_OF_BYTES];
 
+    float Run_Time             = 0;
     short Step_Count           = 0;
     float Current_Motor_Speed  = 0;
     float Pendelum_Angle       = 0;
@@ -61,7 +62,7 @@ int main(int argc, char **argv)
 
 	wiringPiSetup();
 
-	wiringPiSPISetup(0, 1000000);
+	wiringPiSPISetup(0, 2500000);
 
 	pinMode			(0, INPUT);
 	pullUpDnControl (0, PUD_UP);
@@ -77,6 +78,8 @@ int main(int argc, char **argv)
         {
             //normal operational mode for velocity control
             case 0:
+            while(!Packet_Ready)
+			{};
             //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
             for(int i = 0; i < NUMBER_OF_BYTES; i++)
 			{
@@ -85,29 +88,33 @@ int main(int argc, char **argv)
 			}
             //reset the packet flag
             Packet_Ready = false;
+            //merge the incoming bytes into one float
+            static int Run_Time_Short = 0;
+            Run_Time = 0;
+            Run_Time_Short = SPI_IN_TEMP[1] | (SPI_IN_TEMP[2]<<8) | (SPI_IN_TEMP[3]<<16) | (SPI_IN_TEMP[4]<<24);
+            Run_Time = (float)Run_Time_Short / 1000;
             //merge the income bytes into a single float
             Step_Count = 0;
-            Step_Count = SPI_IN_TEMP[1] | (SPI_IN_TEMP[2]<<8);
+            Step_Count = SPI_IN_TEMP[5] | (SPI_IN_TEMP[6]<<8);
             //merge the incoming bytes into one float
             static short Speed_Temp = 0;
             Current_Motor_Speed = 0;
-            Speed_Temp = SPI_IN_TEMP[3] | (SPI_IN_TEMP[4]<<8);
+            Speed_Temp = SPI_IN_TEMP[7] | (SPI_IN_TEMP[8]<<8);
             Current_Motor_Speed = (float)Speed_Temp / 100;
             //merge the incoming bytes into one float
             static short Angle_Short = 0;
             Pendelum_Angle = 0;
-            Angle_Short    = SPI_IN_TEMP[5] | (SPI_IN_TEMP[6]<<8);
+            Angle_Short    = SPI_IN_TEMP[9] | (SPI_IN_TEMP[10]<<8);
             Pendelum_Angle = (float)Angle_Short / 100;
             //merge the incoming bytes into one float
             static short Velocity_Short = 0;
             Pendelum_Velocity  = 0;
-            Velocity_Short     = SPI_IN_TEMP[7] | (SPI_IN_TEMP[8]<<8);
+            Velocity_Short     = SPI_IN_TEMP[11] | (SPI_IN_TEMP[12]<<8);
             Pendelum_Velocity  = (float)Velocity_Short / 100;
             //record the date from the pie in the oreder the data is resived
-            if(Step_Count != NULL && Speed_Temp != NULL && Angle_Short != NULL && Velocity_Short != NULL);
-                Record_Data(Int_To_String(Step_Count,0) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2));
+            Record_Data( Int_To_String(Run_Time,4) + ',' + Int_To_String(Step_Count,1) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2));
             //area to calculate the desired speed
-            static float Desired_Speed = 0.3;
+            static float Desired_Speed = 0.8;
 
             if(Step_Count > 1110)
             {
@@ -115,7 +122,7 @@ int main(int argc, char **argv)
             }
             else if(Step_Count < -1110)
             {
-                Desired_Speed = 0.5;
+                Desired_Speed =  0.5;
             }
 
             SPI_OUT_TEMP[1] =  (short)(Desired_Speed * 100)       & 0xff;
@@ -125,9 +132,6 @@ int main(int argc, char **argv)
 			{
                 SPI_OUT[i] = SPI_OUT_TEMP[i];
 			}
-			while(!Packet_Ready)
-			{};
-            printf("%i\n", Packet_Ready);
             break;
             //mode to poroccess error messages
             case 1:
@@ -195,12 +199,12 @@ void SPI_Req_ISR(void) {
 		SPI_BUFFER[i] = SPI_OUT[i];
     }
 
-	// tx 1 byte as a time as SPI master
+	//tx 1 byte as a time as SPI master
 	for (int i=0; i<NUMBER_OF_BYTES; ++i) {
 		wiringPiSPIDataRW(0, &SPI_BUFFER[i], 1);
 		//wait befor sending next byte
 		TicksNow=micros();
-		while ((micros()-TicksNow)<100);
+		while ((micros()-TicksNow)<200);
 	}
 	//copy to SPI_IN for SPI_BUFFER(now contains data from arduino)
 	for (int i=0; i<NUMBER_OF_BYTES; ++i)
