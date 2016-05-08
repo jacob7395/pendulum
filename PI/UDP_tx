@@ -1,0 +1,45 @@
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+
+int main(int argc, char**argv)
+{
+   int sockfd;
+   struct sockaddr_in destaddr;
+   socklen_t len2;
+   char mesg[1000];
+   int returnv;
+   int i;
+   int MessageLength;
+
+	// create a UDP socket
+   if ((sockfd=socket(AF_INET,SOCK_DGRAM,0))==-1) {
+	   printf("socket() failed\n");
+	   exit(0);
+	} else;
+
+   bzero(&destaddr,sizeof(destaddr));			// clear destaddr structure
+   destaddr.sin_family = AF_INET;				// use IPV4 addresses
+   destaddr.sin_port=htons(55056);				// the port on the computer we are sending to
+
+   // convert the IP address of the destination
+   if (inet_aton("192.168.1.69", &destaddr.sin_addr)==0) {
+	   printf("inet_aton() failed\n");
+	   exit(0);
+	} else;
+
+	// send the same message 10 times
+   for (i=0; i<10; ++i) {
+      len2 = sizeof(destaddr);
+      strcpy(mesg, "Hello UDP World");
+      MessageLength=strlen(mesg);
+      returnv = sendto(sockfd,mesg,MessageLength,0,(struct sockaddr *)&destaddr,len2);
+      printf("Sent %d bytes.\n", returnv);
+   }
+   return(0);
+}
