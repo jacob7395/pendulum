@@ -26,12 +26,23 @@
 #include <string.h>
 #include <wiringPi.h>
 #include <wiringPiSPI.h>
+//Liberys used in UDP
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
 
 #include "File.h"
-#include "UDP_RxTx.h"
+#include "PID_v1.h"
 
 #define PIN 3
 #define NUMBER_OF_BYTES 14
+
+using namespace std;
 
 void SPI_Req_ISR(void);
 
@@ -41,6 +52,14 @@ volatile char SPI_IN [NUMBER_OF_BYTES];
 volatile bool Packet_Ready = false;
 //definces modes of opperation where 0 is the standerd operation mode
 volatile int Mode = 0;
+// PID varibles
+double pidSetpoint, pidInput, pidOutput,Current_Time;
+
+volatile long stepRate;
+//difference between real angle and desired angle
+float error = 0;
+//degrees -179 -> 180
+float encoderAngle = 0;
 
 int main(int argc, char **argv)
 {
@@ -61,25 +80,19 @@ int main(int argc, char **argv)
 
     bzero(&destaddr,sizeof(destaddr));			// clear destaddr structure
     destaddr.sin_family = AF_INET;				// use IPV4 addresses
-    destaddr.sin_port=htons(63239);				// the port on the computer we are sending to
+    destaddr.sin_port=htons(63243);				// the port on the computer we are sending to
 
     // convert the IP address of the destination
     if (inet_aton("192.168.168.3", &destaddr.sin_addr)==0) {
 	   printf("inet_aton() failed\n");
 	   exit(0);
 	} else;
-
-	// example of sending 10 packets
-	/*
-    for (i=0; i<10; ++i) {
-        len2 = sizeof(destaddr);
-        strcpy(mesg, "Hello UDP World");
-        MessageLength=strlen(mesg);
-        returnv = sendto(sockfd,mesg,MessageLength,0,(struct sockaddr *)&destaddr,len2);
-        printf("Sent %d bytes.\n", returnv);
-    }
-    */
     //end of UDP setup
+    //varibles usded to represent Arduino PID gains
+    //initalized hear and set later
+    short P = 0;
+    short I = 0;
+    short D = 0;
 
     char SPI_OUT_TEMP[NUMBER_OF_BYTES];
     char SPI_IN_TEMP [NUMBER_OF_BYTES];
@@ -151,9 +164,18 @@ int main(int argc, char **argv)
             Pendelum_Velocity  = (float)Velocity_Short / 100;
             //record the date from the pie in the oreder the data is resived
             static std::string Data;
-            Data = Int_To_String(Run_Time,4) + ',' + Int_To_String(Step_Count,1) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2);
-            Record_Data(Data);
-            //convert data to array
+            Data =        Int_To_String(Run_Time,4) + ',';
+            Data = Data + Int_To_String(Step_Count,1) + ',';
+            Data = Data + Int_To_String(Current_Motor_Speed,2) + ',';
+            Data = Data + Int_To_String(Pendelum_Angle,2) + ',';
+            Data = Data + Int_To_String(Pendelum_Velocity,2) + ',';
+            Data = Data + Int_To_String(P,1) + ',';
+            Data = Data + Int_To_String(I,1) + ',';
+            Data = Data + Int_To_String(D,1);
+            //write data to file
+            //Record_Data(Data);
+            //UDP sectoin
+            //only send every 10 packets to provent slow speeds
             if(UDP_count > 10)
             {
                 UDP_count = 0;
@@ -168,20 +190,17 @@ int main(int argc, char **argv)
                 MessageLength=strlen(mesg);
                 returnv = sendto(sockfd,mesg,MessageLength,0,(struct sockaddr *)&destaddr,len2);
             }
-            //area to calculate the desired speed
-            static float Desired_Speed = 0.8;
-
-            if(Step_Count > 1110)
-            {
-                Desired_Speed = -0.5;
-            }
-            else if(Step_Count < -1110)
-            {
-                Desired_Speed =  0.5;
-            }
-
-            SPI_OUT_TEMP[1] =  (short)(Desired_Speed * 100)       & 0xff;
-            SPI_OUT_TEMP[2] = ((short)(Desired_Speed * 100) >> 8) & 0xff;
+            P = 50;
+            I = 0;
+            D = 0;
+            //Byte 1 tells the arduion what control mode to be in
+            //0 == nothing
+            //1 == PID
+            SPI_OUT_TEMP[1] = (short)(1) & 0xff;
+            //byts 2-4 are using for P,I,D Gains
+            SPI_OUT_TEMP[2] = (short)(P) & 0xff;
+            SPI_OUT_TEMP[3] = (short)(I) & 0xff;
+            SPI_OUT_TEMP[4] = (short)(D) & 0xff;
             //copy the latest SPI_OUT data for transmision to the interupt
             for(int i = 0; i < NUMBER_OF_BYTES; i++)
 			{
