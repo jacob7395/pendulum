@@ -17,11 +17,11 @@ Disclaimer i'm dyslexic and there is no spell check
 //this defines how often (mS) we request SPI transfer from Pi
 #define TX_INTERVAL 50
 //timeout in mS for "rx data register full" flag to be set
-#define RDRF_TIMEOUT 30
+#define RDRF_TIMEOUT 100
 //timeout in mS for a full packet (SPI data frame) to be received
 #define PACKET_TIMEOUT 100
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
-#define NUMBER_OF_BYTES 10
+#define NUMBER_OF_BYTES 14
 //M/sec
 #define MAX_SPEED 1
 //first stage the program will enter after inital setup
@@ -43,7 +43,7 @@ void Hall_Five_Hit   (void);
 unsigned char GetByteFromSPI(void);
 void SPI_Manager(char opperation);
 //pot managment
-void Mary_Jane(void);
+void Pot_Manager(void);
 
 //---------------------------------------------------------------//
 //global and const varible decloratoin
@@ -135,6 +135,8 @@ unsigned long timestamp1 = 0;
 unsigned long timestamp2 = 0;
 
 short Current_Mode = 0;
+
+int Run_Time = 0;
 //---------------------------------------------------------------//
 // PID varibles
 double pidSetpoint, pidInput, pidOutput;
@@ -199,7 +201,7 @@ void setup() {
   //ADC pin for the pot and seting analog reselution
   analogReadResolution(Pot_Resolution);
   Degree_Per_Bit = 350/pow(2,Pot_Resolution);
-  Timer4.attachInterrupt(Mary_Jane).setFrequency(1000).start();
+  Timer4.attachInterrupt(Pot_Manager).setFrequency(1000).start();
   //establish motor direction toggle pins
   pinMode(Pulse  , OUTPUT); //
   pinMode(Dir    , OUTPUT); //
@@ -259,7 +261,7 @@ void setup() {
 }
 //***********************************************************************//
 void loop() {
-  delay(1000);
+  delay(1000); 
   Serial.println(" ");
   Serial.println("Begin");
   Mode = 4;
@@ -271,21 +273,27 @@ void loop() {
     case 0: //case used under normal opperation
       Config_Mode = false;
       static unsigned long Old_Time = 0;
-
+      //debug for SPI coms
+      // for(int i = 0; i < NUMBER_OF_BYTES-1; i++)
+      // {
+      //   Serial.print(SPI_IN[i]);
+      //   Serial.print("   ");
+      //   Serial.println(SPI_OUT[i]);
+      // }
+      //check if there has been atleast a 10milli delay since the last SPI packet
       while((millis()-Old_Time) < 10)
-      {
-        
-      };
+      {};
+      //call the the SPI manager to send a standerd spi packet
+      //this will return when the packet has been resived
       SPI_Manager(0);
+      //time in millies last SPI packet was compleate
       Old_Time = millis();
-      
+      //speed set from the PI in normal operation more ie SPI(0)
       Desired_Motor_Speed = SPI_Speed;
-      //code normaly commented out for safe serial prints
-      // Serial.println(Step_Count & 0x00ff);
-      //delay(10);//small delay to ensure coms is not too fast
     break;
-    //this case uses a config opperation
-    //it current travels slowly left towards hall 1
+    //this case is a config opperation
+    //it travels slowly left towards hall 1
+    //config mode is needed so when hall 1 is hit it doesnt got to case 3 resetting the track
     //when hall 1 is hit the step count is reset to 0
     //the cart then slowly travels to the other end stoping when it hits hall 5
     //it then prints the step count to the serial storing the value in memory
@@ -315,7 +323,7 @@ void loop() {
       //move to standerd opperation mode
       Mode = 1;
     break;
-    //state to contorl stander communication operations
+    //redundant state
     case 2:
 
     break;
@@ -327,12 +335,12 @@ void loop() {
       //if step count is greater than 2 move towards the middle
       if(Step_Count > Hall_Three_Position+2)
       {
-        Desired_Motor_Speed = -0.4;
+        Desired_Motor_Speed = -0.3;
       }
       //if step count if less than 2 move toward the middle
       else if(Step_Count < Hall_Three_Position-2)
       {
-        Desired_Motor_Speed =  0.4;
+        Desired_Motor_Speed =  0.3;
       }
       else if(Step_Count <= Hall_Three_Position+2 && Step_Count >= Hall_Three_Position-2 )
       {
@@ -353,8 +361,8 @@ void loop() {
     case 4:
       Desired_Motor_Speed = 0.3;
     break;
-    //Start mode used to test motor preformas
-    //moves the cart at random speeds and in random directions
+    //used to test motor preformas with random speed and for random distances
+    //simulates the requrements for balancing
     case 5:
       speed_test = random(8, 10);
       Serial.print(" ");
@@ -537,7 +545,10 @@ void Set_Motor_Speed(void)
     digitalWrite(LED_Blue,LOW);
   }
   //update the current motor speed using the current frequency
-  Current_Motor_Speed = (((Current_Frequency/2)/Distance_Per_Step)/Step_Res);
+  Current_Motor_Speed = (((((float)Current_Frequency)/2)/Distance_Per_Step)/Step_Res);
+
+  if(!Direction)
+    Current_Motor_Speed = -Current_Motor_Speed;
   //---------------------------------------------------------------//
 }
 //***********************************************************************//
@@ -689,6 +700,7 @@ unsigned char GetByteFromSPI(void)
     unsigned long Byte_Start_Time = millis();
     while ((REG_SPI0_SR & SPI_SR_RDRF) == 0) 
     {
+      
       //if the loop takes longer then the RDRF_TIMEOUT as defined the top
       //print a failer message and return 0xff telling the system there was an error
       //it may be possible that 0xff is a valid message if so concider making it invalid or finding a new fault bit
@@ -715,31 +727,38 @@ void SPI_Manager(char opperatoin)
       //the first 2 bytes will be the step count
       //the count needs to be cut in half then recontructed on the other side
       SPI_OUT[0] =  0x55; // standerd opperation start byte
-      
-      SPI_OUT[1] =  Step_Count       & 0x00ff;
-      SPI_OUT[2] = (Step_Count >> 8) & 0x00ff;
+      //run time packet
+      static int Time_Stamp = 0;
+      Time_Stamp = millis() - Run_Time;
+      SPI_OUT[1] =  (Time_Stamp)     & 0xff;
+      SPI_OUT[2] = ((Time_Stamp)>>8) & 0xff;
+      SPI_OUT[3] = ((Time_Stamp)>>16)& 0xff;
+      SPI_OUT[4] = ((Time_Stamp)>>24)& 0xff;
 
-      SPI_OUT[3] =  (int16_t)(Current_Motor_Speed*100)     & 0xff;
-      SPI_OUT[4] = ((int16_t)(Current_Motor_Speed*100)>>8) & 0xff;
+      SPI_OUT[5] =  Step_Count       & 0x00ff;
+      SPI_OUT[6] = (Step_Count >> 8) & 0x00ff;
 
-      SPI_OUT[5] =  (int16_t)(Pot_Position*100)     & 0xff;
-      SPI_OUT[6] = ((int16_t)(Pot_Position*100)>>8) & 0xff;
+      SPI_OUT[7] =  (int16_t)(Current_Motor_Speed*100)     & 0xff;
+      SPI_OUT[8] = ((int16_t)(Current_Motor_Speed*100)>>8) & 0xff;
 
-      SPI_OUT[7] =  (int16_t)(Pot_Velocity*100)     & 0xff;
-      SPI_OUT[8] = ((int16_t)(Pot_Velocity*100)>>8) & 0xff; 
+      SPI_OUT[9] =  (int16_t)(Pot_Position*100)     & 0xff;
+      SPI_OUT[10] = ((int16_t)(Pot_Position*100)>>8) & 0xff;
+
+      SPI_OUT[11] =  (int16_t)(Pot_Velocity*100)     & 0xff;
+      SPI_OUT[12] = ((int16_t)(Pot_Velocity*100)>>8)& 0xff; 
     break;
     //Run on arduino bootup
     case 1:
       //indicatte 
       SPI_OUT[0] = 0x46;
-
+      //tell the PI arduino has bootup
       SPI_OUT[1] = 0x71;
     break;
     //tell PI a collision witht he limits has been made
     case 2:
       //indicatte 
       SPI_OUT[0] = 0x46;
-
+      //tell the PI arduino has collided
       SPI_OUT[1] = 0x72;
     break;
   }
@@ -778,9 +797,8 @@ void SPI_Manager(char opperatoin)
       BytesRx++;
 
       REG_SPI0_TDR = SPI_OUT[BytesRx] & 0x0ff; // load outgoing register 
-      
-      SPI_IN[BytesRx] = GetByteFromSPI();
-      
+
+      SPI_IN[BytesRx] = GetByteFromSPI(); 
     } while(BytesRx < (NUMBER_OF_BYTES-1));
     if(SPI_IN[0] == 0x55)
     {
@@ -796,6 +814,9 @@ void SPI_Manager(char opperatoin)
   {
     //message to userial
     Serial.println("No start byte resived");
+    SPI_IN[1] = 0;
+    SPI_IN[2] = 0;
+    Mode = 3;
     //reset the SPI registers to recover from fault
     REG_SPI0_WPMR = 0x53504900;   // Write Protection disable
     REG_SPI0_CR  = SPI_CR_SWRST;  // reset SPI (0x0080)
@@ -804,12 +825,18 @@ void SPI_Manager(char opperatoin)
     REG_SPI0_CSR = SPI_MODE0;     // DLYBCT=0, DLYBS=0, SCBR=0, 8 bit transfer (0x0002)
     REG_SPI0_IDR = 0X0000070F;    // disable all SPI interrupts
   }
+
+  if(SPI_OUT[0] == 0x46)
+  {
+    Run_Time = millis();
+    Serial.println("New Run");
+  }
 }
 //***********************************************************************//
 //Sectoin for POT managment
 
 //function to read the pot and calculate the anguler position and speed
-void Mary_Jane(void) 
+void Pot_Manager(void) 
 {
   static float Anguler_Count [10];
   static float Velocity_Count[9];
