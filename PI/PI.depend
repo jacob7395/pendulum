@@ -1,10 +1,11 @@
 # depslib dependency file v1.0
-1461802195 source:/root/Desktop/pendulum/PI/main.cpp
+1462713055 source:/root/Desktop/pendulum/PI/main.cpp
 	<stdio.h>
 	<string.h>
 	<wiringPi.h>
 	<wiringPiSPI.h>
 	"File.h"
+	"UDP_RxTx.h"
 
 1460713810 /root/Desktop/pendulum/PI/SPI.h
 	<stdio.h>
@@ -15,7 +16,7 @@
 1460717867 source:/root/Desktop/pendulum/PI/SPI.cpp
 	"SPI.h"
 
-1461608774 source:/root/Desktop/pendulum/PI/File.cpp
+1461802447 source:/root/Desktop/pendulum/PI/File.cpp
 	"File.h"
 
 1461175003 /root/Desktop/pendulum/PI/File.h
@@ -30,4 +31,17 @@
 	<sys/types.h>
 	<sys/stat.h>
 	<unistd.h>
+
+1462707444 /root/Desktop/pendulum/PI/UDP_RxTx.h
+	<sys/socket.h>
+	<netinet/in.h>
+	<arpa/inet.h>
+	<sys/types.h>
+	<unistd.h>
+	<stdlib.h>
+	<string.h>
+	<stdio.h>
+
+1462707767 source:/root/Desktop/pendulum/PI/UDP_RxTx.c
+	"UDP_RxTx.h"
 

@@ -1,13 +1,7 @@
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
 
-int main(int argc, char**argv)
+#include "UDP_RxTx.h"
+
+int UDP(void)
 {
    int sockfd,n;
    struct sockaddr_in servaddr,cliaddr;
@@ -20,7 +14,7 @@ int main(int argc, char**argv)
 	   printf("socket() failed\n");
 	   exit(0);
 	} else;
-	
+
    bzero(&servaddr,sizeof(servaddr));			// clear servaddr structure
    servaddr.sin_family = AF_INET;				// use IPV4 addresses
    servaddr.sin_addr.s_addr=htonl(INADDR_ANY);	// allow any IP address to communicate
@@ -33,8 +27,8 @@ int main(int argc, char**argv)
 
 	// wait for message from any IP address sent to port 3490
 	// the source IP address wil be in cliaddr after the message has been rx
-	// send a message to cliaddr 
-	
+	// send a message to cliaddr
+
    for (;;)
    {
       len = sizeof(cliaddr);
@@ -47,7 +41,7 @@ int main(int argc, char**argv)
 
 		strcpy(mesg, "Hello from Pi");
 		MessageLength=strlen(mesg);
-		
+
       n = sendto(sockfd,mesg,MessageLength,0,(struct sockaddr *)&cliaddr,len);
 
    }

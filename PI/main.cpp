@@ -28,6 +28,7 @@
 #include <wiringPiSPI.h>
 
 #include "File.h"
+#include "UDP_RxTx.h"
 
 #define PIN 3
 #define NUMBER_OF_BYTES 14
@@ -43,7 +44,42 @@ volatile int Mode = 0;
 
 int main(int argc, char **argv)
 {
+    //initalize UDP connection and send a start packet
+    int sockfd;
+    struct sockaddr_in destaddr;
+    socklen_t len2;
+    char mesg[1000];
+    int returnv;
+    int i;
+    int MessageLength;
 
+    // create a UDP socket
+    if ((sockfd=socket(AF_INET,SOCK_DGRAM,0))==-1) {
+        printf("socket() failed\n");
+        exit(0);
+    } else;
+
+    bzero(&destaddr,sizeof(destaddr));			// clear destaddr structure
+    destaddr.sin_family = AF_INET;				// use IPV4 addresses
+    destaddr.sin_port=htons(63239);				// the port on the computer we are sending to
+
+    // convert the IP address of the destination
+    if (inet_aton("192.168.168.3", &destaddr.sin_addr)==0) {
+	   printf("inet_aton() failed\n");
+	   exit(0);
+	} else;
+
+	// example of sending 10 packets
+	/*
+    for (i=0; i<10; ++i) {
+        len2 = sizeof(destaddr);
+        strcpy(mesg, "Hello UDP World");
+        MessageLength=strlen(mesg);
+        returnv = sendto(sockfd,mesg,MessageLength,0,(struct sockaddr *)&destaddr,len2);
+        printf("Sent %d bytes.\n", returnv);
+    }
+    */
+    //end of UDP setup
 
     char SPI_OUT_TEMP[NUMBER_OF_BYTES];
     char SPI_IN_TEMP [NUMBER_OF_BYTES];
@@ -80,6 +116,8 @@ int main(int argc, char **argv)
             case 0:
             while(!Packet_Ready)
 			{};
+			static int UDP_count = 0;
+			UDP_count++;
             //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
             for(int i = 0; i < NUMBER_OF_BYTES; i++)
 			{
@@ -112,7 +150,24 @@ int main(int argc, char **argv)
             Velocity_Short     = SPI_IN_TEMP[11] | (SPI_IN_TEMP[12]<<8);
             Pendelum_Velocity  = (float)Velocity_Short / 100;
             //record the date from the pie in the oreder the data is resived
-            Record_Data( Int_To_String(Run_Time,4) + ',' + Int_To_String(Step_Count,1) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2));
+            static std::string Data;
+            Data = Int_To_String(Run_Time,4) + ',' + Int_To_String(Step_Count,1) + ',' + Int_To_String(Current_Motor_Speed,2) + ',' + Int_To_String(Pendelum_Angle,2) + ',' + Int_To_String(Pendelum_Velocity,2);
+            Record_Data(Data);
+            //convert data to array
+            if(UDP_count > 10)
+            {
+                UDP_count = 0;
+                char Data_Array[Data.size()];
+                for(int i = 0; i <= Data.size(); i ++)
+                {
+                    Data_Array[i] = Data[i];
+                }
+                //send tha data over UDP
+                len2 = sizeof(destaddr);
+                strcpy(mesg, Data_Array);
+                MessageLength=strlen(mesg);
+                returnv = sendto(sockfd,mesg,MessageLength,0,(struct sockaddr *)&destaddr,len2);
+            }
             //area to calculate the desired speed
             static float Desired_Speed = 0.8;
 
