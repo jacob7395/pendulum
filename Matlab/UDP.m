@@ -18,7 +18,7 @@ end
 % these our our ip and port
 % port must be > 1024
 set(obj1, 'LocalHost', Local_IP);
-set(obj1, 'LocalPort', 63242);
+set(obj1, 'LocalPort', 63243);
 set(obj1, 'LocalPortMode', 'manual');
 
 % Connect to instrument object
@@ -44,7 +44,7 @@ ax2 = subplot(2,2,2); % bottom subplot
 grid on, axis([0,30,-1.0,1.0])
 set   (gca,'fontsize',12,'fontweight','bold') % Fontsize
 title ('Cart Velocity','fontsize',12,'fontweight','bold')
-ylabel('Degrees','fontsize',12,'fontweight','bold')
+ylabel('Velocity(Ms)','fontsize',12,'fontweight','bold')
 xlabel('Time Seconds','fontsize',12,'fontweight','bold')
 hold on
 
@@ -57,15 +57,25 @@ ylabel('Degrees','fontsize',12,'fontweight','bold')
 xlabel('Time Seconds','fontsize',12,'fontweight','bold')
 hold on
 
-data = [0,0,0,0,0];
-count = 0;
-loop  = 5000;
-while count <= loop
+ax3 = subplot(2,2,5); % bottom right subplot
+
+grid on, axis([0,30,-180,180])
+set   (gca,'fontsize',12,'fontweight','bold') % Fontsize
+title ('PID','fontsize',12,'fontweight','bold')
+ylabel('Degrees','fontsize',12,'fontweight','bold')
+xlabel('Time Seconds','fontsize',12,'fontweight','bold')
+hold on
+
+data = [0,0,0,0,0,0,0,0];
+
+fopen( 'run.txt', 'wt' );
+
+while exist('run.txt', 'file') == 2
     % wait for udp packet
     % default time = 10 sec but can be changed
     s = fscanf(obj1);
     %check a packet has been resived
-    if length(s > 1) && size(str2num(s),2) == 5
+    if length(s > 1) && size(str2num(s),2) == 8
         data_buffer = str2num(s);
         if     data(size(data,1),1) < data_buffer(1,1)
             data = [data;str2num(s)];
@@ -112,8 +122,6 @@ while count <= loop
     else
         disp('Bad Coms')
     end
- 
-    count = count + 1;
 end
 
 % Disconnect from instrument object, obj1.

@@ -1,3 +1,4 @@
+
 /*************************************************************
 This program will be used to control a NEMA24 stepper motor for
 an inverted pendulem proble. It will be reading a single pedomiter
@@ -148,7 +149,16 @@ float error = 0;
 float encoderAngle = 0;
 
 // create the PID controller
-PID myPID(&pidInput, &pidOutput, &pidSetpoint, 5, 100, 1, DIRECT); //tuning
+PID myPID(&pidInput, &pidOutput, &pidSetpoint, 0, 0, 0, DIRECT); //tuning
+bool PID_Enabled = 0;
+
+short Kp = 0;
+short Ki = 0;
+short Kd = 0;
+
+short Set_Kp = 0;
+short Set_Ki = 0;
+short Set_Kd = 0;
 //***********************************************************************//
 void setup() {
 
@@ -242,7 +252,6 @@ void setup() {
   pinMode(LED_Red     , OUTPUT);
   //--------------------------------------------------------------------//
   //PID setup
-
   // PID variables
   pidInput    = 0;
   pidOutput   = 0;
@@ -288,8 +297,55 @@ void loop() {
       SPI_Manager(0);
       //time in millies last SPI packet was compleate
       Old_Time = millis();
-      //speed set from the PI in normal operation more ie SPI(0)
-      Desired_Motor_Speed = SPI_Speed;
+
+      if(PID_Enabled == true)
+      {
+        //chack if PID gains have changed
+        if(Ki != Set_Ki || Kp != Set_Kp || Kd != Set_Kd)
+        {
+          myPID.SetTunings(Kp,Ki,Kd);
+        }
+        //PID Control
+        static bool Direction_Latch = 1;
+        //get the current encoder angle
+        noInterrupts();
+        encoderAngle = Pot_Position;
+        interrupts();
+
+        if(Step_Count > 10)
+        {
+          pidSetpoint = 1;
+        }
+        else if(Step_Count < -10)
+        {
+          pidSetpoint = -1;
+        }
+        
+        //difference from desiredAngle, doesn't account for desired angles other than 0
+        if(Pot_Position > 0)
+        {
+          error = encoderAngle - 180 - 0.5;
+        }
+        else if(Pot_Position < 0)
+        {
+          error = 180 + encoderAngle + 0.5;
+        }
+        
+        //do the PID stuff
+        pidInput = error;
+        myPID.Compute();
+
+        // if the pendulum is too far off of vertical to recover, turn off the PID and motor
+        if (error > 45 || error < -45) {
+          myPID.SetMode(MANUAL);
+          pidOutput = 0;
+          Desired_Motor_Speed = 0;
+        } else { //in bounds
+          myPID.SetMode(AUTOMATIC);
+          Desired_Motor_Speed = (float(pidOutput) * MAX_SPEED) / 256;
+          //Serial.println((float(pidOutput) * MAX_SPEED) / 256);
+        }
+      }
     break;
     //this case is a config opperation
     //it travels slowly left towards hall 1
@@ -800,11 +856,14 @@ void SPI_Manager(char opperatoin)
 
       SPI_IN[BytesRx] = GetByteFromSPI(); 
     } while(BytesRx < (NUMBER_OF_BYTES-1));
+    //decode complere packet
     if(SPI_IN[0] == 0x55)
     {
-      static int16_t SPI_Speed_Short = 0;
-      SPI_Speed_Short = SPI_IN[1] | (SPI_IN[2]<<8);
-      SPI_Speed = ((float)SPI_Speed_Short)/100;
+      //first byde declares if PID should be enabled
+      PID_Enabled = SPI_IN[1];
+      Kp          = SPI_IN[2];
+      Ki          = SPI_IN[3];
+      Kd          = SPI_IN[4];
     } 
   }
   //if start but was not resived in the first byte data is wrong
