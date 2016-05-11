@@ -28,8 +28,13 @@ void File_Init(void)
 
     strftime(TimeString, 80, "%Y-%m-%d-%H:%M:%S", my_date_time);
 
+<<<<<<< HEAD
     File_Path = (Folder_Path + TimeString);
     File_Path =  Folder_Path;
+=======
+    File_Path = (Folder_Path + TimeString + "_RunCount-"+Int_To_String(iRun_Count,0));
+    iRun_Count++;
+>>>>>>> parent of 583e3ba... Pi coms now works, speed can be set by the pi
 
     for(int i = 0; i < File_Path.length(); i++)
     {
@@ -38,12 +43,15 @@ void File_Init(void)
             File_Path[i] = '_';
         }
     }
-    //conert folder path into array
+
+    cout << File_Path << "\n";
+
     char File_Path_Array[File_Path.size()];
     for(int i = 0; i <= File_Path.size(); i ++)
     {
         File_Path_Array[i] = File_Path[i];
     }
+<<<<<<< HEAD
     //make folder
     mkdir(File_Path_Array, 0700);
     //add runcount to with folder path
@@ -59,17 +67,29 @@ void File_Init(void)
     //print file path and incroment run count
     cout << File_Path << "\n";
     iRun_Count++;
+=======
+
+    outFile.open(File_Path_Array);
+    outFile.close();
+>>>>>>> parent of 583e3ba... Pi coms now works, speed can be set by the pi
 }
 //create a new file and incroment run count
 void New_Run(void)
 {
     //close any existing file
     outFile.close();
+<<<<<<< HEAD
     //null file path
     File_Path =  "";
     //make new file path
     File_Path = (Folder_Path + TimeString + "/Run-"+Int_To_String(iRun_Count,0)+".csv");
     File_Path = (Folder_Path + "/Run-"+Int_To_String(iRun_Count,0)+".csv");
+=======
+
+    File_Path = ' ';
+
+    File_Path = (Folder_Path + TimeString + "_RunCount-"+Int_To_String(iRun_Count,0));
+>>>>>>> parent of 583e3ba... Pi coms now works, speed can be set by the pi
     iRun_Count++;
 
 
@@ -81,6 +101,8 @@ void New_Run(void)
         }
     }
 
+    cout << File_Path << "\n";
+
     char File_Path_Array[File_Path.size()];
     for(int i = 0; i <= File_Path.size(); i ++)
     {
@@ -88,8 +110,6 @@ void New_Run(void)
     }
 
     outFile.open(File_Path_Array);
-
-    cout << File_Path << "\n";
 }
 
 void Record_Data(std::string data)

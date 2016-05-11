@@ -13,9 +13,6 @@ Contaions file managment functions
 #include <fstream>
 #include <sstream>
 #include <math.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 void File_Init(void);
 void New_Run(void);

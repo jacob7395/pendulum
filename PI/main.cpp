@@ -111,7 +111,11 @@ int main(int argc, char **argv)
 
 	wiringPiSetup();
 
+<<<<<<< HEAD
 	wiringPiSPISetup(0, 2500000);
+=======
+	wiringPiSPISetup(0, 500000);
+>>>>>>> parent of 583e3ba... Pi coms now works, speed can be set by the pi
 
 	pinMode			(0, INPUT);
 	pullUpDnControl (0, PUD_UP);
@@ -132,11 +136,8 @@ int main(int argc, char **argv)
 			static int UDP_count = 0;
 			UDP_count++;
             //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
-            for(int i = 0; i < NUMBER_OF_BYTES; i++)
-			{
-                SPI_IN_TEMP [i] = SPI_IN [i];
-                SPI_OUT_TEMP[i] = SPI_OUT[i];
-			}
+            strncpy(SPI_IN_TEMP , SPI_IN , NUMBER_OF_BYTES);
+            strncpy(SPI_OUT_TEMP, SPI_OUT, NUMBER_OF_BYTES);
             //reset the packet flag
             Packet_Ready = false;
             //merge the incoming bytes into one float
@@ -148,8 +149,8 @@ int main(int argc, char **argv)
             Step_Count = 0;
             Step_Count = SPI_IN_TEMP[5] | (SPI_IN_TEMP[6]<<8);
             //merge the incoming bytes into one float
-            static short Speed_Temp = 0;
             Current_Motor_Speed = 0;
+<<<<<<< HEAD
             Speed_Temp = SPI_IN_TEMP[7] | (SPI_IN_TEMP[8]<<8);
             Current_Motor_Speed = (float)Speed_Temp / 100;
             //merge the incoming bytes into one float
@@ -206,15 +207,29 @@ int main(int argc, char **argv)
 			{
                 SPI_OUT[i] = SPI_OUT_TEMP[i];
 			}
+=======
+            Current_Motor_Speed = float(SPI_IN_TEMP[3] | (SPI_IN_TEMP[4]<<8))/100;
+            //merge the incoming bytes into one float
+            Pendelum_Angle      = 0;
+            Pendelum_Angle      = float(SPI_IN_TEMP[5] | (SPI_IN_TEMP[6]<<8))/100;
+            //merge the incoming bytes into one float
+            Pendelum_Velocity   = 0;
+            Pendelum_Velocity   = float(SPI_IN_TEMP[7] | (SPI_IN_TEMP[8]<<8))/100;
+            //record the date from the pie in the oreder the data is resived
+            Record_Data(Int_To_String(Step_Count,0) + ' ' + Int_To_String(Current_Motor_Speed,2) + ' ' + Int_To_String(Pendelum_Angle,2) + ' ' + Int_To_String(Pendelum_Velocity,2));
+
+            //copy the latest SPI_OUT data for transmision to the interupt
+            strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
+            //wait for a new packed
+            while(!Packet_Ready)
+            {};
+>>>>>>> parent of 583e3ba... Pi coms now works, speed can be set by the pi
             break;
             //mode to poroccess error messages
             case 1:
                 //copy SPI_IN to a holder file attempting to stop corrupted files form the interupt
-                for(int i = 0; i < NUMBER_OF_BYTES; i++)
-                {
-                    SPI_IN_TEMP [i] = SPI_IN [i];
-                    SPI_OUT_TEMP[i] = SPI_OUT[i];
-                }
+                strncpy(SPI_IN_TEMP , SPI_IN , NUMBER_OF_BYTES);
+                strncpy(SPI_OUT_TEMP, SPI_OUT, NUMBER_OF_BYTES);
                 //reset ready flag
                 Packet_Ready = false;
                 switch(SPI_IN_TEMP[1])
@@ -230,11 +245,7 @@ int main(int argc, char **argv)
                     break;
                 }
                 //copy the latest SPI_OUT data for transmision to the interupt
-                for(int i = 0; i < NUMBER_OF_BYTES; i++)
-                {
-                    SPI_OUT[i] = SPI_OUT_TEMP[i];
-                }
-                //wait for next packet befor switching start
+                strncpy(SPI_OUT, SPI_OUT_TEMP, NUMBER_OF_BYTES);
                 while(!Packet_Ready)
                 {};
             break;
@@ -247,7 +258,7 @@ int main(int argc, char **argv)
 void SPI_Req_ISR(void) {
 
     static int TicksNow = 0;
-    static short chksum   = 0;
+    static int chksum   = 0;
 
     volatile int Packets	 = 0;
     volatile int BadSOM		 = 0;
@@ -278,7 +289,11 @@ void SPI_Req_ISR(void) {
 		wiringPiSPIDataRW(0, &SPI_BUFFER[i], 1);
 		//wait befor sending next byte
 		TicksNow=micros();
+<<<<<<< HEAD
 		while ((micros()-TicksNow)<200);
+=======
+		while ((micros()-TicksNow)<50);
+>>>>>>> parent of 583e3ba... Pi coms now works, speed can be set by the pi
 	}
 	//copy to SPI_IN for SPI_BUFFER(now contains data from arduino)
 	for (int i=0; i<NUMBER_OF_BYTES; ++i)
@@ -295,9 +310,8 @@ void SPI_Req_ISR(void) {
 		{
 			chksum += SPI_IN[i];
         }
-        chksum = chksum & 0x00FF;
         //if checksum is wrong log an error
-		if (chksum != SPI_BUFFER[NUMBER_OF_BYTES-1])
+		if (chksum == SPI_BUFFER[NUMBER_OF_BYTES-1])
 		{
 			ChksumErrorCount++;
 			printf("Checksum Error Count - %i\n", ChksumErrorCount);
@@ -305,7 +319,6 @@ void SPI_Req_ISR(void) {
 			{
                 printf("%x %x\n", SPI_IN[i], SPI_OUT[i]);
 			}
-			printf("%x\n", chksum);
             //may insuret a error reset meaning if chkerror is more then 10 in 1 run reset run and log fail
             Packet_Ready = false;
             return;
