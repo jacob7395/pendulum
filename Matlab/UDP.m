@@ -1,5 +1,5 @@
-clc
-clear all
+%clc
+%clear all
 
 Target_IP   = '192.168.168.3';
 Local_IP    = '192.168.168.3';
@@ -18,7 +18,7 @@ end
 % these our our ip and port
 % port must be > 1024
 set(obj1, 'LocalHost', Local_IP);
-set(obj1, 'LocalPort', 63226);
+set(obj1, 'LocalPort', 63243);
 set(obj1, 'LocalPortMode', 'manual');
 
 % Connect to instrument object
@@ -57,7 +57,7 @@ ylabel('Degrees','fontsize',12,'fontweight','bold')
 xlabel('Time Seconds','fontsize',12,'fontweight','bold')
 hold on
 
-ax4 = subplot(2,2,4); % bottom right subplot
+ax3 = subplot(2,2,5); % bottom right subplot
 
 grid on, axis([0,30,-180,180])
 set   (gca,'fontsize',12,'fontweight','bold') % Fontsize
@@ -66,7 +66,7 @@ ylabel('Degrees','fontsize',12,'fontweight','bold')
 xlabel('Time Seconds','fontsize',12,'fontweight','bold')
 hold on
 
-data = [0,0,0,0,0];
+data = [0,0,0,0,0,0,0,0];
 
 fopen( 'run.txt', 'wt' );
 
@@ -75,7 +75,7 @@ while exist('run.txt', 'file') == 2
     % default time = 10 sec but can be changed
     s = fscanf(obj1);
     %check a packet has been resived
-    if length(s) > 1 && size(str2num(s),2) == 5
+    if length(s > 1) && size(str2num(s),2) == 8
         data_buffer = str2num(s);
         if     data(size(data,1),1) < data_buffer(1,1)
             data = [data;str2num(s)];
