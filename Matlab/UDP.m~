@@ -18,7 +18,7 @@ end
 % these our our ip and port
 % port must be > 1024
 set(obj1, 'LocalHost', Local_IP);
-set(obj1, 'LocalPort', 63226);
+set(obj1, 'LocalPort', 63225);
 set(obj1, 'LocalPortMode', 'manual');
 
 % Connect to instrument object
@@ -76,6 +76,7 @@ while exist('run.txt', 'file') == 2
     s = fscanf(obj1);
     %check a packet has been resived
     if length(s) > 1 && size(str2num(s),2) == 5
+        pause(1);
         data_buffer = str2num(s);
         if     data(size(data,1),1) < data_buffer(1,1)
             data = [data;str2num(s)];
