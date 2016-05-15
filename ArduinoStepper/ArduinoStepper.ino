@@ -26,7 +26,7 @@ Disclaimer i'm dyslexic and there is no spell check
 //M/sec
 #define MAX_SPEED 1
 //first stage the program will enter after inital setup
-#define INITAL_MODE 0
+#define INITAL_MODE 2
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -159,6 +159,16 @@ short Kd = 0;
 short Set_Kp = 0;
 short Set_Ki = 0;
 short Set_Kd = 0;
+//---------------------------------------------------------------//
+// Flick varibles
+int   Stage                = 0;
+int   Max_Angle            = 0;
+int   Angle_Reached        = 0;
+float Speed                = 0.8;
+unsigned long Old_Time_Two = 0;
+int   Count                = 0;
+int   Pulse_Count          = 0;
+int   Old_Angle            = 0;
 //***********************************************************************//
 void setup() {
 
@@ -282,13 +292,6 @@ void loop() {
     case 0: //case used under normal opperation
       Config_Mode = false;
       static unsigned long Old_Time = 0;
-      //debug for SPI coms
-      // for(int i = 0; i < NUMBER_OF_BYTES-1; i++)
-      // {
-      //   Serial.print(SPI_IN[i]);
-      //   Serial.print("   ");
-      //   Serial.println(SPI_OUT[i]);
-      // }
       //check if there has been atleast a 10milli delay since the last SPI packet
       while((millis()-Old_Time) < 10)
       {};
@@ -318,7 +321,7 @@ void loop() {
         }
         else if(Step_Count < -10)
         {
-          pidSetpoint = -1;
+          pidSetpoint = -0;
         }
         
         //difference from desiredAngle, doesn't account for desired angles other than 0
@@ -336,10 +339,12 @@ void loop() {
         myPID.Compute();
 
         // if the pendulum is too far off of vertical to recover, turn off the PID and motor
-        if (error > 45 || error < -45) {
+        if (error > 15 || error < -15) {
           myPID.SetMode(MANUAL);
           pidOutput = 0;
           Desired_Motor_Speed = 0;
+          //change to flick mode
+          Mode  = 2;
         } else { //in bounds
           myPID.SetMode(AUTOMATIC);
           Desired_Motor_Speed = (float(pidOutput) * MAX_SPEED) / 256;
@@ -381,7 +386,123 @@ void loop() {
     break;
     //redundant state
     case 2:
+      Config_Mode = false;
+      
+      //Serial.println(Count);
+      //check if there has been atleast a 10milli delay since the last SPI packet
+      while((millis()-Old_Time_Two) < 10)
+      {};
+      //call the the SPI manager to send a standerd spi packet
+      //this will return when the packet has been resived
+      SPI_Manager(0);
+      //time in millies last SPI packet was compleate
+      Old_Time_Two = millis();
 
+      switch(Stage) {
+        //inital stage to move to cart to a set position
+        case 0:
+          if(Step_Count < 250)
+          {
+            Desired_Motor_Speed = 0.4;
+          }
+          else
+          {
+            Desired_Motor_Speed = 0;
+            Stage = 1;
+          }
+        break;
+
+        case 1:
+          if(Pot_Position >= Max_Angle)
+          {
+            Pulse_Count++;
+          }
+          else if(Pot_Position <= (Max_Angle - 5) && Pot_Position > 0)
+          {
+            //Serial.println(Speed);
+            Desired_Motor_Speed = -Speed;
+            Stage = 2;
+          }
+        break;
+
+        case 2:
+          if(Step_Count < -250)
+          {
+            Pulse_Count = 0;
+            Angle_Reached = 0;
+            Max_Angle = 0;
+            Desired_Motor_Speed = 0;
+            Stage = 3;
+          }
+        break;
+
+        case 3:
+          if(Pot_Position <= Max_Angle)
+          {
+            Pulse_Count++;
+          }
+          else if(Pot_Position >= (Max_Angle + 5) && Pot_Position < 0)
+          {
+            //Serial.println(Speed);
+            Desired_Motor_Speed =  Speed;
+            Stage = 4;
+          }
+        break;
+
+        case 4:
+          if(Step_Count > 250)
+          {
+            Pulse_Count = 0;
+            Angle_Reached = 0;
+            Max_Angle = 0;
+            Desired_Motor_Speed = 0;
+            Stage = 1;
+          }
+        break;
+      }
+
+      if(Pulse_Count >= 10)
+      {
+        Pulse_Count = 0;
+        Max_Angle = Pot_Position;
+        Angle_Reached = Max_Angle;
+      }
+
+      if     (Angle_Reached >=  95 || Angle_Reached <=  -95)
+      {
+        if(Angle_Reached < 0)
+        {
+          Angle_Reached *= -1;
+        }
+        Speed = ((-pow((Angle_Reached - 90),2))/90 + 80)/100;
+        if(Speed < 0)
+        {
+          Speed *= -1;
+        }
+
+        if(Speed < 0.35)
+        {
+          Speed = 0.35;
+        }
+      }
+      else if(Angle_Reached <=  80 || Angle_Reached >=  -80)
+      {
+        Speed = 0.8;
+      }
+      
+      if (Pot_Position < 10 && Pot_Position > -10)
+      {
+        Pulse_Count = 0;
+        Count       = 0;
+      }
+      
+      if(((Old_Angle -  Pot_Position) > 100 || (Old_Angle -  Pot_Position) < -100) && (Angle_Reached > 150 || Angle_Reached < -150))
+      {
+        Angle_Reached = 0;
+        Stage         = 0;
+        Mode          = 0;
+      }
+      Old_Angle = Pot_Position;
     break;
     //case position the cart in the middle of the track and stop
     case 3:
