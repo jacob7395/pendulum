@@ -33,6 +33,15 @@ title ('Pendulum Angle','fontsize',12,'fontweight','bold')
 ylabel('Degrees','fontsize',12,'fontweight','bold')
 xlabel('Time Seconds','fontsize',12,'fontweight','bold')
 hold on
+
+ax4 = subplot(2,2,4); % bottom subplot
+
+grid on, axis([0,30,-180,180])
+set   (gca,'fontsize',12,'fontweight','bold') % Fontsize
+title ('Pendulum Angle','fontsize',12,'fontweight','bold')
+ylabel('Degrees','fontsize',12,'fontweight','bold')
+xlabel('Time Seconds','fontsize',12,'fontweight','bold')
+hold on
 pause(1)
 %connect to udp
 Target_IP   = '192.168.168.3';
@@ -52,19 +61,21 @@ end
 % these our our ip and port
 % port must be > 1024
 set(obj1, 'LocalHost', Local_IP);
-set(obj1, 'LocalPort', 63233);
+set(obj1, 'LocalPort', 63234);
 set(obj1, 'LocalPortMode', 'manual');
 
 % Connect to instrument object
 fopen(obj1);
 
 data = [0,0,0,0,0];
+Angle_Plot = 0;
 
 error_count = 0;
 
 file = fopen( 'run.txt', 'wt' );
 fclose(file);
 pause(1)
+
 while exist('run.txt', 'file') == 2
     % wait for udp packet
     % default time = 10 sec but can be changed
@@ -73,7 +84,8 @@ while exist('run.txt', 'file') == 2
         data_buffer = str2num(s);
         if     data(size(data,1),1) < data_buffer(1,1)
             error_count = 0;
-            
+            %store angle befor normalizing around 180
+            Angle_Plot = [Angle_Plot;data_buffer(1,4)];
             if data_buffer(1,4) > 0
                 data_buffer(1,4) = data_buffer(1,4) - 180;
             else
@@ -82,22 +94,24 @@ while exist('run.txt', 'file') == 2
             
             data        = [data;data_buffer];
             %plot scroling graph
-            while size(data,1)-300 > n
-                
+            while size(data,1)-300 > n                
                 axis(ax1,[data(n,1),1+data(n+300,1),-1500,1500])
-                axis(ax3,[data(n,1),1+data(n+300,1),-180,180])
-                axis(ax2,[data(n,1),1+data(n+300,1),-1.0,1.0])
+                axis(ax3,[data(n,1),1+data(n+300,1), -180, 180])
+                axis(ax2,[data(n,1),1+data(n+300,1), -1.0, 1.0])
+                axis(ax4,[data(n,1),1+data(n+300,1), -180, 180])
+ 
+                Plot_One    = plot(ax1,data(n:n+300,1),        data(n:n+300,2), 'r');
+                Plot_Two    = plot(ax2,data(n:n+300,1),        data(n:n+300,3), 'g');
+                Plot_Three  = plot(ax3,data(n:n+300,1),        data(n:n+300,4), 'b');
+                Plot_Four   = plot(ax4,data(n:n+300,1),  Angle_Plot(n:n+300,1), 'b');
 
-                Plot_One    = plot(ax1,data(n:n+300,1),  data(n:n+300,2), 'r');
-                Plot_Two    = plot(ax2,data(n:n+300,1),  data(n:n+300,3), 'g');
-                Plot_Three  = plot(ax3,data(n:n+300,1),  data(n:n+300,4), 'b');
-
-                n = n + 10;
+                n = n + 5;
                 pause(0.00001)
-
+                
                 delete(Plot_One)
                 delete(Plot_Two)
                 delete(Plot_Three)
+                delete(Plot_Four)
             end
             %plot non scroling graph
 %             if size(data,1)-310 < n

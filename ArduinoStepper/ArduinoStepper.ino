@@ -24,9 +24,9 @@ Disclaimer i'm dyslexic and there is no spell check
 //the number of bytes being transmited and resived in one SPI message incluing start and chack
 #define NUMBER_OF_BYTES 14
 //M/sec
-#define MAX_SPEED 1
+#define MAX_SPEED 0.8
 //first stage the program will enter after inital setup
-#define INITAL_MODE 2
+#define INITAL_MODE 0
 
 //---------------------------------------------------------------//
 //function decleratoin
@@ -152,9 +152,9 @@ float encoderAngle = 0;
 PID myPID(&pidInput, &pidOutput, &pidSetpoint, 0, 0, 0, DIRECT); //tuning
 bool PID_Enabled = 0;
 
-short Kp = 0;
-short Ki = 0;
-short Kd = 0;
+short Kp = 1;
+short Ki = 100;
+short Kd = 1;
 
 short Set_Kp = 0;
 short Set_Ki = 0;
@@ -290,6 +290,7 @@ void loop() {
     switch(Mode) {
     
     case 0: //case used under normal opperation
+
       Config_Mode = false;
       static unsigned long Old_Time = 0;
       //check if there has been atleast a 10milli delay since the last SPI packet
@@ -297,10 +298,10 @@ void loop() {
       {};
       //call the the SPI manager to send a standerd spi packet
       //this will return when the packet has been resived
-      SPI_Manager(0);
+      //SPI_Manager(0);
       //time in millies last SPI packet was compleate
       Old_Time = millis();
-
+      PID_Enabled = true;
       if(PID_Enabled == true)
       {
         //chack if PID gains have changed
@@ -317,21 +318,21 @@ void loop() {
 
         if(Step_Count > 10)
         {
-          pidSetpoint = 1;
+          pidSetpoint =    1;
         }
         else if(Step_Count < -10)
         {
-          pidSetpoint = -0;
+          pidSetpoint =    0;
         }
         
         //difference from desiredAngle, doesn't account for desired angles other than 0
         if(Pot_Position > 0)
         {
-          error = encoderAngle - 180 - 0.5;
+          error = encoderAngle - 180;
         }
         else if(Pot_Position < 0)
         {
-          error = 180 + encoderAngle + 0.5;
+          error = 180 + encoderAngle;
         }
         
         //do the PID stuff
@@ -344,7 +345,7 @@ void loop() {
           pidOutput = 0;
           Desired_Motor_Speed = 0;
           //change to flick mode
-          Mode  = 2;
+          //Mode  = 2;
         } else { //in bounds
           myPID.SetMode(AUTOMATIC);
           Desired_Motor_Speed = (float(pidOutput) * MAX_SPEED) / 256;
@@ -400,6 +401,7 @@ void loop() {
 
       switch(Stage) {
         //inital stage to move to cart to a set position
+        //only used when the case is called
         case 0:
           if(Step_Count < 250)
           {
@@ -411,7 +413,8 @@ void loop() {
             Stage = 1;
           }
         break;
-
+        //case to set the speed at witch to movemet form 250 -> -250
+        //waits till the pendulm is falling befor seting the speed
         case 1:
           if(Pot_Position >= Max_Angle)
           {
@@ -424,9 +427,9 @@ void loop() {
             Stage = 2;
           }
         break;
-
+        //stop and reset the needed varible when the cart reaches -250
         case 2:
-          if(Step_Count < -250)
+          if(Step_Count < -150)
           {
             Pulse_Count = 0;
             Angle_Reached = 0;
@@ -435,7 +438,8 @@ void loop() {
             Stage = 3;
           }
         break;
-
+        //case to set the motor speed when moving from -250 -> 250
+        //waits till the pendulm is falling befor seting the speed
         case 3:
           if(Pot_Position <= Max_Angle)
           {
@@ -443,14 +447,13 @@ void loop() {
           }
           else if(Pot_Position >= (Max_Angle + 5) && Pot_Position < 0)
           {
-            //Serial.println(Speed);
             Desired_Motor_Speed =  Speed;
             Stage = 4;
           }
         break;
-
+        //final case befor looping back to stage 1 where the cart moves from -250 -> 250
         case 4:
-          if(Step_Count > 250)
+          if(Step_Count > 150)
           {
             Pulse_Count = 0;
             Angle_Reached = 0;
@@ -460,44 +463,52 @@ void loop() {
           }
         break;
       }
-
-      if(Pulse_Count >= 10)
+      //attempts to control spikes coused when the pot moves over the dead zone
+      if(Pulse_Count >= 15)
       {
         Pulse_Count = 0;
         Max_Angle = Pot_Position;
         Angle_Reached = Max_Angle;
       }
-
+      //calculated the pendulum speed as it approches the top
+      //the speed needs to decrease the colser the pedulm is to the center
+      //this makes for the smoothist transition from harmonios motion to PID
       if     (Angle_Reached >=  95 || Angle_Reached <=  -95)
       {
         if(Angle_Reached < 0)
         {
           Angle_Reached *= -1;
         }
-        Speed = ((-pow((Angle_Reached - 90),2))/90 + 80)/100;
+        //the formuler used to find the desires speed
+        Speed = ((-pow((Angle_Reached - 90),2))/100 + 80)/100;
         if(Speed < 0)
         {
           Speed *= -1;
         }
-
-        if(Speed < 0.35)
+        //the minumum speed the pendulum can go
+        if(Speed < 0.40)
         {
-          Speed = 0.35;
+          //Speed = 0.40;
         }
+        Serial.println(Speed);
       }
-      else if(Angle_Reached <=  80 || Angle_Reached >=  -80)
+      //default speed when below 95 degrees
+      else if(Angle_Reached <=  95 || Angle_Reached >=  -95)
       {
         Speed = 0.8;
       }
-      
-      if (Pot_Position < 10 && Pot_Position > -10)
+      //resets counts when the pendulum passes through 0
+      if (Pot_Position < 5 && Pot_Position > -5)
       {
         Pulse_Count = 0;
         Count       = 0;
       }
-      
+      //desides when to switch from swing up to PID
+      //this attempts to switch just as the pendeulm passes from -180 to 180 be looking at the diffrence between the angles
+      //when switchuing to PID key varibles are reset
       if(((Old_Angle -  Pot_Position) > 100 || (Old_Angle -  Pot_Position) < -100) && (Angle_Reached > 150 || Angle_Reached < -150))
       {
+        Pulse_Count   = 0;
         Angle_Reached = 0;
         Stage         = 0;
         Mode          = 0;
@@ -578,7 +589,7 @@ void loop() {
       }
       else if(Step_Count < -10)
       {
-        pidSetpoint = -1;
+        pidSetpoint = -0.5;
       }
       
       //difference from desiredAngle, doesn't account for desired angles other than 0
